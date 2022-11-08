@@ -21,6 +21,74 @@ import textwrap
 import typing
 
 
+class StoreCMakeVarAction(argparse.Action):
+    """
+    Stores a value as a pass-through translation for a given CMAKE variable.
+    """
+
+    ACTION_NAME = "store_cmakevar"
+    OUTPUT_KEY = "cmake_configure_vars"
+
+    def __init__(
+        self,
+        option_strings: typing.List[str],
+        dest: str,
+        cmakevar: str,
+        nargs: typing.Optional[typing.Any] = None,
+        const: typing.Optional[typing.Any] = None,
+        default: typing.Optional[typing.Any] = None,
+        type: typing.Optional[typing.Callable[[str], typing.Any]] = None,
+        choices: typing.Optional[typing.List[typing.Any]] = None,
+        required: bool = False,
+        help: typing.Optional[str] = None,
+        metavar: typing.Optional[str] = None,
+    ):
+
+        super().__init__(
+            option_strings=option_strings,
+            dest=dest,
+            nargs=(nargs if const is None else 0),
+            const=const,
+            default=default,
+            type=type,
+            choices=choices,
+            required=required,
+            help=help,
+            metavar=metavar,
+        )
+        if self.help is None:
+            if self.const is not None:
+                self.help = "Provide %(cmakevar)s"
+            else:
+                self.help = "Value for %(cmakevar)s"
+                if self.default is not None:
+                    self.help = self.help + " (defaults to %(default)s)"
+
+        self.cmakevar = cmakevar
+
+    def _get_kwargs(self) -> typing.List[typing.Tuple[str, typing.Any]]:
+        superkwargs = super()._get_kwargs()
+        superkwargs.append(("cmakevar", getattr(self, "cmakevar")))
+        return superkwargs
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: typing.Union[str, typing.Sequence, None],
+        option_string: typing.Optional[str] = None,
+    ) -> None:
+        setattr(namespace, self.dest, values)
+        if not hasattr(namespace, self.OUTPUT_KEY):
+            setattr(namespace, self.OUTPUT_KEY, [])
+
+        cmake_configure_vars = getattr(namespace, self.OUTPUT_KEY)
+        if self.const is None:
+            cmake_configure_vars.append("-D{}={}".format(self.cmakevar, values))
+        else:
+            cmake_configure_vars.append("-D{}={}".format(self.cmakevar, self.const))
+
+
 def _make_parser() -> argparse.ArgumentParser:
 
     epilog = textwrap.dedent(
@@ -38,6 +106,8 @@ def _make_parser() -> argparse.ArgumentParser:
         epilog=epilog,
         formatter_class=argparse.RawTextHelpFormatter,
     )
+
+    parser.register("action", StoreCMakeVarAction.ACTION_NAME, StoreCMakeVarAction)
 
     parser.add_argument(
         "--override",
@@ -116,28 +186,37 @@ def _make_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    build_args.add_argument("-l", "--language", default="c", help="Value for NUNAVUT_VERIFICATION_LANG (defaults to c)")
-
-    build_args.add_argument("-std", "--language-standard", default="", help="Language standard")
-
-    build_args.add_argument("--build-type", help="Value for CMAKE_BUILD_TYPE")
-
-    build_args.add_argument("--endianness", help="Value for NUNAVUT_VERIFICATION_TARGET_ENDIANNESS")
-
-    build_args.add_argument("--platform", help="Value for NUNAVUT_VERIFICATION_TARGET_PLATFORM")
-
     build_args.add_argument(
-        "--disable-asserts", action="store_true", help="Set NUNAVUT_VERIFICATION_SER_ASSERT=OFF (default is ON)"
+        "-l", "--language", default="c", action="store_cmakevar", cmakevar="NUNAVUT_VERIFICATION_LANG"
     )
 
     build_args.add_argument(
-        "--disable-fp", action="store_true", help="Set NUNAVUT_VERIFICATION_SER_FP_DISABLE=ON (default is OFF)"
+        "-std", "--language-standard", action="store_cmakevar", cmakevar="NUNAVUT_VERIFICATION_LANG_STANDARD"
+    )
+
+    build_args.add_argument("--build-type", action="store_cmakevar", cmakevar="Value for CMAKE_BUILD_TYPE")
+
+    build_args.add_argument("--endianness", action="store_cmakevar", cmakevar="NUNAVUT_VERIFICATION_TARGET_ENDIANNESS")
+
+    build_args.add_argument("--platform", action="store_cmakevar", cmakevar="NUNAVUT_VERIFICATION_TARGET_PLATFORM")
+
+    build_args.add_argument(
+        "--disable-asserts",
+        action="store_cmakevar",
+        const="OFF",
+        default="ON",
+        cmakevar="NUNAVUT_VERIFICATION_SER_ASSERT",
+    )
+
+    build_args.add_argument(
+        "--disable-fp", action="store_cmakevar", const="ON", cmakevar="NUNAVUT_VERIFICATION_SER_FP_DISABLE"
     )
 
     build_args.add_argument(
         "--enable-ovr-var-array",
-        action="store_true",
-        help="Set NUNAVUT_VERIFICATION_OVR_VAR_ARRAY_ENABLE=ON (default is OFF)",
+        action="store_cmakevar",
+        const="ON",
+        cmakevar="NUNAVUT_VERIFICATION_OVR_VAR_ARRAY_ENABLE",
     )
 
     build_args.add_argument(
@@ -341,7 +420,7 @@ def _cmake_run(
     if env is not None:
         copy_of_env.update(env)
 
-    if verbose > 1:
+    if verbose > 2:
         logging.debug("        *****************************************************************")
         logging.debug("        Using Environment:")
         for key, value in copy_of_env.items():
@@ -396,6 +475,45 @@ def _handle_build_dir(args: argparse.Namespace, cmake_dir: pathlib.Path) -> None
         logging.info("Using existing build directory at {}".format(cmake_dir))
 
 
+def _verbose_to_loglevel(verbosity: int) -> str:
+
+    if verbosity == 1:
+        cmake_logging_level = "STATUS"
+    elif verbosity == 2:
+        cmake_logging_level = "VERBOSE"
+    elif verbosity == 3:
+        cmake_logging_level = "DEBUG"
+    elif verbosity > 3:
+        cmake_logging_level = "TRACE"
+    else:
+        cmake_logging_level = "NOTICE"
+
+    return cmake_logging_level
+
+
+FlagSetName = typing.TypeVar("FlagSetName", pathlib.Path, pathlib.Path)
+ToolchainName = typing.TypeVar("ToolchainName", pathlib.Path, pathlib.Path)
+
+
+def _resolve_flags_and_tools(args: argparse.Namespace) -> typing.Tuple[FlagSetName, typing.Optional[ToolchainName]]:
+
+    flag_set_dir = pathlib.Path("cmake") / pathlib.Path("compiler_flag_sets")
+    if args.no_coverage:
+        flagset_file = (flag_set_dir / pathlib.Path("native")).with_suffix(".cmake")
+    else:
+        flagset_file = (flag_set_dir / pathlib.Path("native_w_cov")).with_suffix(".cmake")
+
+    toolchain_file: typing.Optional[pathlib.Path] = None
+    if args.toolchain_family != "none":
+        toolchain_dir = pathlib.Path("cmake") / pathlib.Path("toolchains")
+        if args.toolchain_family == "clang":
+            toolchain_file = toolchain_dir / pathlib.Path("clang-native").with_suffix(".cmake")
+        else:
+            toolchain_file = toolchain_dir / pathlib.Path("gcc-native").with_suffix(".cmake")
+
+    return (flagset_file, toolchain_file)
+
+
 def _cmake_configure(args: argparse.Namespace, cmake_args: typing.List[str], cmake_dir: pathlib.Path) -> int:
     """
     Format and execute cmake configure command. This also include the cmake build directory (re)creation
@@ -405,63 +523,20 @@ def _cmake_configure(args: argparse.Namespace, cmake_args: typing.List[str], cma
     if args.build_only or args.test_only:
         return 0
 
-    cmake_logging_level = "NOTICE"
-
-    if args.verbose == 1:
-        cmake_logging_level = "STATUS"
-    elif args.verbose == 2:
-        cmake_logging_level = "VERBOSE"
-    elif args.verbose == 3:
-        cmake_logging_level = "DEBUG"
-    elif args.verbose > 3:
-        cmake_logging_level = "TRACE"
-
     _handle_build_dir(args, cmake_dir)
 
     cmake_configure_args = cmake_args.copy()
 
-    cmake_configure_args.append("--log-level={}".format(cmake_logging_level))
-    cmake_configure_args.append("-DNUNAVUT_VERIFICATION_LANG={}".format(args.language))
-
-    if args.language_standard is not None:
-        cmake_configure_args.append("-DNUNAVUT_VERIFICATION_LANG_STANDARD={}".format(args.language_standard))
-
-    if args.build_type is not None:
-        cmake_configure_args.append("-DCMAKE_BUILD_TYPE={}".format(args.build_type))
-
-    if args.endianness is not None:
-        cmake_configure_args.append("-DNUNAVUT_VERIFICATION_TARGET_ENDIANNESS={}".format(args.endianness))
-
-    if args.platform is not None:
-        cmake_configure_args.append("-DNUNAVUT_VERIFICATION_TARGET_PLATFORM={}".format(args.platform))
-
-    if args.disable_asserts:
-        cmake_configure_args.append("-DNUNAVUT_VERIFICATION_SER_ASSERT:BOOL=OFF")
-
-    if args.disable_fp:
-        cmake_configure_args.append("-DNUNAVUT_VERIFICATION_SER_FP_DISABLE:BOOL=ON")
-
-    if args.enable_ovr_var_array:
-        cmake_configure_args.append("-DNUNAVUT_VERIFICATION_OVR_VAR_ARRAY_ENABLE:BOOL=ON")
+    cmake_configure_args.append("--log-level={}".format(_verbose_to_loglevel(args.verbose)))
+    cmake_configure_args += args.cmake_configure_vars
 
     if args.verbose > 0:
         cmake_configure_args.append("-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON")
 
-    flag_set_dir = pathlib.Path("cmake") / pathlib.Path("compiler_flag_sets")
-    if args.no_coverage:
-        flagset_file = (flag_set_dir / pathlib.Path("native")).with_suffix(".cmake")
-    else:
-        flagset_file = (flag_set_dir / pathlib.Path("native_w_cov")).with_suffix(".cmake")
+    flagset_file, toolchain_file = _resolve_flags_and_tools(args)
 
     cmake_configure_args.append("-DNUNAVUT_FLAGSET={}".format(str(flagset_file)))
-
-    if args.toolchain_family != "none":
-        toolchain_dir = pathlib.Path("cmake") / pathlib.Path("toolchains")
-        if args.toolchain_family == "clang":
-            toolchain_file = toolchain_dir / pathlib.Path("clang-native").with_suffix(".cmake")
-        else:
-            toolchain_file = toolchain_dir / pathlib.Path("gcc-native").with_suffix(".cmake")
-
+    if toolchain_file is not None:
         cmake_configure_args.append("-DCMAKE_TOOLCHAIN_FILE={}".format(str(toolchain_file)))
 
     if not args.use_default_generator:
