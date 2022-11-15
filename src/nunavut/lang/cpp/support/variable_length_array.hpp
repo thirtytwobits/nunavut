@@ -460,15 +460,19 @@ public:
         const std::size_t no_shrink_capacity = (clamped_capacity > size_) ? clamped_capacity : size_;
 
         T* new_data = nullptr;
+#if __cpp_exceptions
         try
         {
+#endif
             new_data = alloc_.allocate(no_shrink_capacity);
+#if __cpp_exceptions
         } catch (const std::bad_alloc& e)
         {
             // we ignore the exception since all allocation failures are modeled using
             // null by this class.
             (void) e;
         }
+#endif
 
         if (new_data != nullptr)
         {
@@ -515,15 +519,19 @@ public:
         // Allocate only enough to store what we have.
         T* minimized_data = nullptr;
 
+#if __cpp_exceptions
         try
         {
+#endif
             minimized_data = alloc_.allocate(size_ * sizeof(T));
+#if __cpp_exceptions
         } catch (const std::bad_alloc& e)
         {
             // we ignore the exception since all allocation failures are modeled using
             // null by this class.
             (void) e;
         }
+#endif
 
         if (minimized_data == nullptr)
         {
@@ -700,7 +708,7 @@ private:
     static constexpr bool internal_compare_element(
         const U& lhs,
         const U& rhs,
-        typename std::enable_if<!std::is_floating_point<U>::value>::type* = 0) noexcept
+        typename std::enable_if<!std::is_floating_point<U>::value>::type* = nullptr) noexcept
     {
         return (lhs == rhs);
     }
@@ -709,7 +717,7 @@ private:
     static constexpr bool internal_compare_element(
         const U& lhs,
         const U& rhs,
-        typename std::enable_if<std::is_floating_point<U>::value>::type* = 0) noexcept
+        typename std::enable_if<std::is_floating_point<U>::value>::type* = nullptr) noexcept
     {
         // From the C++ documentation for std::numeric_limits<T>::epsilon()
         // https://en.cppreference.com/w/cpp/types/numeric_limits/epsilon
@@ -767,7 +775,7 @@ private:
                                           const std::size_t src_capacity_count,
                                           Allocator&        alloc,
                                           typename std::enable_if<std::is_trivially_destructible<U>::value>::type* =
-                                              0) noexcept(noexcept(allocator_type().deallocate(nullptr, 0)))
+                                              nullptr) noexcept(noexcept(allocator_type().deallocate(nullptr, 0)))
     {
         (void) src_size_count;
         alloc.deallocate(src, src_capacity_count);
@@ -783,7 +791,8 @@ private:
         const std::size_t src_capacity_count,
         Allocator&        alloc,
         typename std::enable_if<!std::is_trivially_destructible<U>::value>::type* =
-            0) noexcept(std::is_nothrow_destructible<U>::value&& noexcept(allocator_type().deallocate(nullptr, 0)))
+            nullptr) noexcept(std::is_nothrow_destructible<U>::value&& noexcept(allocator_type().deallocate(nullptr,
+                                                                                                            0)))
     {
         std::size_t dtor_iterator = src_size_count;
         while (dtor_iterator > 0)
@@ -804,7 +813,7 @@ private:
         std::size_t src_capacity_count,
         Allocator&  alloc,
         typename std::enable_if<std::is_fundamental<U>::value>::type* =
-            0) noexcept(noexcept(fast_deallocate<U>(nullptr, 0, 0, std::declval<Allocator&>())))
+            nullptr) noexcept(noexcept(fast_deallocate<U>(nullptr, 0, 0, std::declval<Allocator&>())))
     {
         if (src_len_count > 0)
         {
@@ -824,11 +833,11 @@ private:
         std::size_t src_len_count,
         std::size_t src_capacity_count,
         Allocator&  alloc,
-        typename std::enable_if<!std::is_fundamental<U>::value>::type* = 0,
+        typename std::enable_if<!std::is_fundamental<U>::value>::type* = nullptr,
         typename std::enable_if<std::is_move_constructible<U>::value || std::is_copy_constructible<U>::value>::type* =
-            0) noexcept((std::is_nothrow_move_constructible<U>::value ||
-                         std::is_nothrow_copy_constructible<
-                             U>::value) && noexcept(fast_deallocate<U>(nullptr, 0, 0, std::declval<Allocator&>())))
+            nullptr) noexcept((std::is_nothrow_move_constructible<U>::value ||
+                               std::is_nothrow_copy_constructible<U>::
+                                   value) && noexcept(fast_deallocate<U>(nullptr, 0, 0, std::declval<Allocator&>())))
     {
         if (src_len_count > 0)
         {

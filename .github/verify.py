@@ -20,6 +20,8 @@ import sys
 import textwrap
 import typing
 
+# +---------------------------------------------------------------------------+
+
 
 class StoreCMakeVarAction(argparse.Action):
     """
@@ -87,6 +89,8 @@ class StoreCMakeVarAction(argparse.Action):
             cmake_configure_vars.append("-D{}={}".format(self.cmakevar, values))
         else:
             cmake_configure_vars.append("-D{}={}".format(self.cmakevar, self.const))
+
+# +---------------------------------------------------------------------------+
 
 
 def _make_parser() -> argparse.ArgumentParser:
@@ -198,7 +202,12 @@ def _make_parser() -> argparse.ArgumentParser:
 
     build_args.add_argument("--endianness", action="store_cmakevar", cmakevar="NUNAVUT_VERIFICATION_TARGET_ENDIANNESS")
 
-    build_args.add_argument("--platform", action="store_cmakevar", cmakevar="NUNAVUT_VERIFICATION_TARGET_PLATFORM")
+    build_args.add_argument(
+        "--platform",
+        action="store_cmakevar",
+        choices=["native32", "native64", "arduino"],
+        cmakevar="NUNAVUT_VERIFICATION_TARGET_PLATFORM",
+    )
 
     build_args.add_argument(
         "--disable-asserts",
@@ -286,6 +295,18 @@ def _make_parser() -> argparse.ArgumentParser:
     )
 
     action_args.add_argument(
+        "--test-target",
+        help=textwrap.dedent(
+            """
+        If provided, the test action is to only build the provided cmake target.
+        If not provided then all tests registered with "all" are built and run.
+    """[
+                1:
+            ]
+        ),
+    )
+
+    action_args.add_argument(
         "--dry-run",
         action="store_true",
         help=textwrap.dedent(
@@ -358,6 +379,8 @@ def _make_parser() -> argparse.ArgumentParser:
 
     return parser
 
+# +---------------------------------------------------------------------------+
+
 
 def _apply_overrides(args: argparse.Namespace) -> argparse.Namespace:
     if args.override is not None:
@@ -390,6 +413,8 @@ def _apply_overrides(args: argparse.Namespace) -> argparse.Namespace:
                             setattr(args, corrected_key, value)
 
     return args
+
+# +---------------------------------------------------------------------------+
 
 
 def _cmake_run(
@@ -433,6 +458,8 @@ def _cmake_run(
     else:
         return 0
 
+# +---------------------------------------------------------------------------+
+
 
 def _handle_build_dir(args: argparse.Namespace, cmake_dir: pathlib.Path) -> None:
     """
@@ -474,6 +501,8 @@ def _handle_build_dir(args: argparse.Namespace, cmake_dir: pathlib.Path) -> None
     else:
         logging.info("Using existing build directory at {}".format(cmake_dir))
 
+# +---------------------------------------------------------------------------+
+
 
 def _verbose_to_loglevel(verbosity: int) -> str:
 
@@ -490,6 +519,8 @@ def _verbose_to_loglevel(verbosity: int) -> str:
 
     return cmake_logging_level
 
+# +---------------------------------------------------------------------------+
+
 
 FlagSetName = typing.TypeVar("FlagSetName", pathlib.Path, pathlib.Path)
 ToolchainName = typing.TypeVar("ToolchainName", pathlib.Path, pathlib.Path)
@@ -499,19 +530,32 @@ def _resolve_flags_and_tools(args: argparse.Namespace) -> typing.Tuple[FlagSetNa
 
     flag_set_dir = pathlib.Path("cmake") / pathlib.Path("compiler_flag_sets")
     if args.no_coverage:
-        flagset_file = (flag_set_dir / pathlib.Path("native")).with_suffix(".cmake")
+        if args.platform == "arduino":
+            flagset_file = (flag_set_dir / pathlib.Path("arduino")).with_suffix(".cmake")
+        else:
+            flagset_file = (flag_set_dir / pathlib.Path("native")).with_suffix(".cmake")
     else:
+        if args.platform == "arduino":
+            raise argparse.ArgumentError(None, "Coverage data for arduino is not currently supported.")
         flagset_file = (flag_set_dir / pathlib.Path("native_w_cov")).with_suffix(".cmake")
 
     toolchain_file: typing.Optional[pathlib.Path] = None
     if args.toolchain_family != "none":
         toolchain_dir = pathlib.Path("cmake") / pathlib.Path("toolchains")
-        if args.toolchain_family == "clang":
-            toolchain_file = toolchain_dir / pathlib.Path("clang-native").with_suffix(".cmake")
+        if args.toolchain_family == "gcc":
+            if args.platform == "arduino":
+                toolchain_file = toolchain_dir / pathlib.Path("gcc-arm-none-eabi").with_suffix(".cmake")
+            else:
+                toolchain_file = toolchain_dir / pathlib.Path("gcc-native").with_suffix(".cmake")
         else:
-            toolchain_file = toolchain_dir / pathlib.Path("gcc-native").with_suffix(".cmake")
+            if args.platform == "arduino":
+                raise argparse.ArgumentError(None, "No clang compiler for arduino is configured.")
+            else:
+                toolchain_file = toolchain_dir / pathlib.Path("clang-native").with_suffix(".cmake")
 
     return (flagset_file, toolchain_file)
+
+# +---------------------------------------------------------------------------+
 
 
 def _cmake_configure(args: argparse.Namespace, cmake_args: typing.List[str], cmake_dir: pathlib.Path) -> int:
@@ -546,6 +590,8 @@ def _cmake_configure(args: argparse.Namespace, cmake_args: typing.List[str], cma
 
     return _cmake_run(cmake_configure_args, cmake_dir, args.verbose, args.dry_run)
 
+# +---------------------------------------------------------------------------+
+
 
 def _cmake_build(args: argparse.Namespace, cmake_args: typing.List[str], cmake_dir: pathlib.Path) -> int:
     """
@@ -564,6 +610,8 @@ def _cmake_build(args: argparse.Namespace, cmake_args: typing.List[str], cmake_d
 
     return 0
 
+# +---------------------------------------------------------------------------+
+
 
 def _cmake_test(args: argparse.Namespace, cmake_args: typing.List[str], cmake_dir: pathlib.Path) -> int:
     """
@@ -575,7 +623,9 @@ def _cmake_test(args: argparse.Namespace, cmake_args: typing.List[str], cmake_di
 
         cmake_test_args += ["--build", ".", "--target"]
 
-        if args.no_coverage:
+        if args.test_target is not None:
+            cmake_test_args.append(args.test_target)
+        elif args.no_coverage:
             cmake_test_args.append("test_all")
         else:
             cmake_test_args.append("cov_all_archive")
@@ -583,6 +633,8 @@ def _cmake_test(args: argparse.Namespace, cmake_args: typing.List[str], cmake_di
         return _cmake_run(cmake_test_args, cmake_dir, args.verbose, args.dry_run)
 
     return 0
+
+# +---------------------------------------------------------------------------+
 
 
 def _create_build_dir_name(args: argparse.Namespace) -> str:
@@ -613,6 +665,8 @@ def _create_build_dir_name(args: argparse.Namespace) -> str:
 
     return name
 
+# +---------------------------------------------------------------------------+
+
 
 @functools.lru_cache(maxsize=None)
 def _get_version_string() -> typing.Tuple[str, str, str]:
@@ -622,6 +676,8 @@ def _get_version_string() -> typing.Tuple[str, str, str]:
     version_string = typing.cast(str, eval("__version__"))
     version_array = version_string.split(".")
     return (version_array[0], version_array[1], version_array[2])
+
+# +---------------------------------------------------------------------------+
 
 
 def main() -> int:
@@ -688,6 +744,8 @@ def main() -> int:
         return _cmake_test(args, cmake_args, cmake_dir)
 
     raise RuntimeError("Internal logic error: only_do_x flags resulted in no action.")
+
+# +---------------------------------------------------------------------------+
 
 
 if __name__ == "__main__":

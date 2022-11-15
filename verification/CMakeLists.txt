@@ -3,7 +3,7 @@
 # Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 #
 
-cmake_minimum_required(VERSION 3.10.0)
+cmake_minimum_required(VERSION 3.16.0)
 
 project(nunavut_verification C CXX)
 
@@ -115,6 +115,8 @@ if(DEFINED NUNAVUT_VERIFICATION_TARGET_PLATFORM)
      elseif(${NUNAVUT_VERIFICATION_TARGET_PLATFORM} STREQUAL "native64")
           list(APPEND NUNAVUT_VERIFICATION_EXTRA_COMPILE_CFLAGS "-m64")
           message(STATUS "Configuring for native64 platform.")
+     elseif(${NUNAVUT_VERIFICATION_TARGET_PLATFORM} STREQUAL "arduino")
+          message(STATUS "Configuring for a cortex M7 platform.")
      else()
           message(FATAL_ERROR "\"${NUNAVUT_VERIFICATION_TARGET_PLATFORM}\" is not a supported value.")
      endif()
@@ -349,20 +351,26 @@ foreach(NATIVE_TEST ${NATIVE_TESTS_CPP})
           list(APPEND ${NATIVE_TEST_NAME}_CPP_EXTRA_FLAGS "-Wno-old-style-cast")
     endif()
 
-    define_native_unit_test("gtest"
-                            ${NATIVE_TEST_NAME}
-                            ${NATIVE_TEST}
+    define_unit_test(${NATIVE_TEST_NAME}
+                     ${NUNAVUT_VERIFICATIONS_BINARY_DIR}
+                     ${NATIVE_TEST}
+                     "${${NATIVE_TEST_NAME}_CPP_EXTRA_FLAGS}"
+                     dsdl-regulated
+                     dsdl-test
+                     ${LOCAL_ADDITIONAL_DSDL_LIBS}
+                     o1heap)
+
+    define_unit_test_runner("gtest"
+                            "${NATIVE_TEST_NAME}_native"
                             ${NUNAVUT_VERIFICATIONS_BINARY_DIR}
-                            "${${NATIVE_TEST_NAME}_CPP_EXTRA_FLAGS}"
-                            dsdl-regulated
-                            dsdl-test
-                            ${LOCAL_ADDITIONAL_DSDL_LIBS}
-                            o1heap)
-    define_native_test_run(${NATIVE_TEST_NAME} ${NUNAVUT_VERIFICATIONS_BINARY_DIR})
-    define_native_test_run_with_lcov(${NATIVE_TEST_NAME} ${NUNAVUT_VERIFICATIONS_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/\\*)
-    define_natve_test_coverage(${NATIVE_TEST_NAME} ${NUNAVUT_VERIFICATIONS_BINARY_DIR})
-    list(APPEND ALL_TESTS "run_${NATIVE_TEST_NAME}")
-    list(APPEND ALL_TESTS_WITH_LCOV "run_${NATIVE_TEST_NAME}_with_lcov")
+                            ${NATIVE_TEST_NAME}
+                            )
+
+    define_native_test_run("${NATIVE_TEST_NAME}_native" ${NUNAVUT_VERIFICATIONS_BINARY_DIR})
+    define_native_test_run_with_lcov("${NATIVE_TEST_NAME}_native" ${NUNAVUT_VERIFICATIONS_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/\\*)
+    define_native_test_coverage("${NATIVE_TEST_NAME}_native" ${NUNAVUT_VERIFICATIONS_BINARY_DIR})
+    list(APPEND ALL_TESTS "run_${NATIVE_TEST_NAME}_native")
+    list(APPEND ALL_TESTS_WITH_LCOV "run_${NATIVE_TEST_NAME}_native_with_lcov")
     list(APPEND ALL_TEST_COVERAGE "--add-tracefile")
     list(APPEND ALL_TEST_COVERAGE "${NUNAVUT_VERIFICATIONS_BINARY_DIR}/coverage.${NATIVE_TEST_NAME}.filtered.info")
 endforeach()
@@ -372,18 +380,23 @@ foreach(NATIVE_TEST ${NATIVE_TESTS_C})
     set(${NATIVE_TEST_NAME}_C_EXTRA_FLAGS, "")
     list(APPEND ${NATIVE_TEST_NAME}_C_EXTRA_FLAGS ${NUNAVUT_VERIFICATION_EXTRA_COMPILE_CFLAGS})
 
-    define_native_unit_test("unity"
-                            ${NATIVE_TEST_NAME}
-                            ${NATIVE_TEST}
+    define_unit_test(${NATIVE_TEST_NAME}
+                     ${NUNAVUT_VERIFICATIONS_BINARY_DIR}
+                     ${NATIVE_TEST}
+                     "${${NATIVE_TEST_NAME}_C_EXTRA_FLAGS}"
+                     dsdl-regulated
+                     dsdl-test)
+
+    define_unit_test_runner("unity"
+                            "${NATIVE_TEST_NAME}_native"
                             ${NUNAVUT_VERIFICATIONS_BINARY_DIR}
-                            "${${NATIVE_TEST_NAME}_C_EXTRA_FLAGS}"
-                            dsdl-regulated
-                            dsdl-test)
-    define_native_test_run(${NATIVE_TEST_NAME} ${NUNAVUT_VERIFICATIONS_BINARY_DIR})
-    define_native_test_run_with_lcov(${NATIVE_TEST_NAME} ${NUNAVUT_VERIFICATIONS_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/\\*)
-    define_natve_test_coverage(${NATIVE_TEST_NAME} ${NUNAVUT_VERIFICATIONS_BINARY_DIR})
-    list(APPEND ALL_TESTS "run_${NATIVE_TEST_NAME}")
-    list(APPEND ALL_TESTS_WITH_LCOV "run_${NATIVE_TEST_NAME}_with_lcov")
+                            ${NATIVE_TEST_NAME}_runner)
+
+    define_native_test_run("${NATIVE_TEST_NAME}_native" ${NUNAVUT_VERIFICATIONS_BINARY_DIR})
+    define_native_test_run_with_lcov("${NATIVE_TEST_NAME}_native" ${NUNAVUT_VERIFICATIONS_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/\\*)
+    define_native_test_coverage("${NATIVE_TEST_NAME}_native" ${NUNAVUT_VERIFICATIONS_BINARY_DIR})
+    list(APPEND ALL_TESTS "run_${NATIVE_TEST_NAME}_native")
+    list(APPEND ALL_TESTS_WITH_LCOV "run_${NATIVE_TEST_NAME}_native_with_lcov")
     list(APPEND ALL_TEST_COVERAGE "--add-tracefile")
     list(APPEND ALL_TEST_COVERAGE "${NUNAVUT_VERIFICATIONS_BINARY_DIR}/coverage.${NATIVE_TEST_NAME}.filtered.info")
 endforeach()

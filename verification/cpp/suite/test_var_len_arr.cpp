@@ -300,16 +300,22 @@ TYPED_TEST(VLATestsStatic, TestOutOfMemory)
     }
     ASSERT_TRUE(did_run_out_of_memory);
     const std::size_t size_before = subject.size();
+#if __cpp_exceptions
     try
     {
+#endif
         subject.push_back(0);
-    } catch (const std::length_error& e)
-    {
-        std::cerr << e.what() << '\n';
-    } catch (const std::bad_alloc& e)
+#if __cpp_exceptions
+    }
+    catch (const std::length_error& e)
     {
         std::cerr << e.what() << '\n';
     }
+    catch (const std::bad_alloc& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+#endif
 
     ASSERT_EQ(size_before, subject.size());
     for (std::size_t i = 1; i < ran_out_of_memory_at; ++i)
@@ -337,16 +343,22 @@ TYPED_TEST(VLATestsStatic, TestOverMaxSize)
     ASSERT_EQ(MaxSize, subject.reserve(MaxSize + 1));
 
     ASSERT_EQ(MaxSize, subject.size());
+#if __cpp_exceptions
     try
     {
+#endif
         subject.push_back(0);
-    } catch (const std::length_error& e)
-    {
-        std::cerr << e.what() << '\n';
-    } catch (const std::bad_alloc& e)
+#if __cpp_exceptions
+    }
+    catch (const std::length_error& e)
     {
         std::cerr << e.what() << '\n';
     }
+    catch (const std::bad_alloc& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+#endif
 
     ASSERT_EQ(MaxSize, subject.size());
     for (std::size_t i = 0; i < MaxSize; ++i)

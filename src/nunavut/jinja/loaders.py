@@ -62,7 +62,7 @@ class DSDLTemplateLoader(BaseLoader):
 
         if templates_dirs is not None:
             for templates_dir_item in templates_dirs:
-                if not pathlib.Path(templates_dir_item).exists:
+                if not templates_dir_item.exists():
                     raise ValueError("Templates directory {} did not exist?".format(templates_dir_item))
             logger.info("Loading templates from file system at {}".format(templates_dirs))
             self._fsloader = FileSystemLoader((str(d) for d in templates_dirs), followlinks=followlinks)

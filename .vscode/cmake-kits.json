@@ -119,5 +119,21 @@
             "NUNAVUT_VERIFICATION_TARGET_PLATFORM": "native32",
             "NUNAVUT_FLAGSET": "${workspaceFolder}/verification/cmake/compiler_flag_sets/native.cmake"
         }
+    },
+    {
+        "name": "arm-gcc-cpp-nocov",
+        "toolchainFile": "${workspaceFolder}/verification/cmake/toolchains/gcc-arm-none-linux-gnueabihf.cmake",
+        "cmakeSettings": {
+            "NUNAVUT_VERIFICATION_LANG": "cpp",
+            "NUNAVUT_FLAGSET": "${workspaceFolder}/verification/cmake/compiler_flag_sets/armv7l.cmake"
+        }
+    },
+    {
+        "name": "arm-gcc-c-nocov",
+        "toolchainFile": "${workspaceFolder}/verification/cmake/toolchains/gcc-arm-none-linux-gnueabihf.cmake",
+        "cmakeSettings": {
+            "NUNAVUT_VERIFICATION_LANG": "c",
+            "NUNAVUT_FLAGSET": "${workspaceFolder}/verification/cmake/compiler_flag_sets/armv7l.cmake"
+        }
     }
 ]

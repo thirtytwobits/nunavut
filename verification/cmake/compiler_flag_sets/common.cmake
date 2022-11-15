@@ -34,6 +34,8 @@ list(APPEND C_AND_CXX_FLAG_SET
                 "-Wswitch-enum"
                 "-Wtype-limits"
                 "-Wno-error=array-bounds"
+                "-fdata-sections"
+                "-ffunction-sections"
 )
 
 #

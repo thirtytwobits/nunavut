@@ -11,30 +11,37 @@ else()
     message(FATAL_ERROR "Couldn't find Googletest. Did you forget to git submodule update --init?")
 endif()
 
+
 include_directories(
     ${GOOGLETEST_SUBMODULE}/googletest/include
     ${GOOGLETEST_SUBMODULE}/googlemock/include
 )
 
-add_library(gmock_main STATIC EXCLUDE_FROM_ALL
+# +---------------------------------------------------------------------------+
+# | Build for execution on the host (native) environment.
+# +---------------------------------------------------------------------------+
+add_library(gmock_native STATIC EXCLUDE_FROM_ALL
             ${GOOGLETEST_SUBMODULE}/googletest/src/gtest-all.cc
             ${GOOGLETEST_SUBMODULE}/googlemock/src/gmock-all.cc
             ${GOOGLETEST_SUBMODULE}/googlemock/src/gmock_main.cc
 )
 
-target_include_directories(gmock_main PRIVATE
+target_include_directories(gmock_native
+                           PRIVATE
                            ${GOOGLETEST_SUBMODULE}/googletest
                            ${GOOGLETEST_SUBMODULE}/googlemock
 )
 
-target_compile_options(gmock_main PUBLIC
+target_compile_options(gmock_native
+                       PRIVATE
                        "-Wno-switch-enum"
                        "-Wno-zero-as-null-pointer-constant"
                        "-Wno-missing-declarations"
                        "-Wno-sign-conversion"
-                       "-DGTEST_HAS_PTHREAD=0"
+                       "-Wno-unused-parameter"
+                       "-Wno-unused-result"
                        "${NUNAVUT_VERIFICATION_EXTRA_COMPILE_CFLAGS}"
-                       )
+)
 
 include(FindPackageHandleStandardArgs)
 

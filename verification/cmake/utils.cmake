@@ -45,7 +45,7 @@ endfunction()
 # +===========================================================================+
 #
 # :function: apply_flag_set
-# CMake 3.10 compatible routine for loading this project's compiler flag sets
+# Standard routine for loading this project's compiler flag sets
 # (found under cmake/compiler_flag_sets) and properly setting the following cmake build variables:
 #       - CMAKE_C_FLAGS
 #       - CMAKE_CXX_FLAGS
@@ -62,10 +62,10 @@ function(apply_flag_set ARG_FLAG_SET
 
     # list(JOIN ) is a thing in cmake 3.12 but we only require 3.10.
     # Why 3.10? Because this is the version in Ubuntu 18.04 LTS.
-    string(REPLACE ";" " " LOCAL_CMAKE_C_FLAGS "${C_FLAG_SET}")
-    string(REPLACE ";" " " LOCAL_CMAKE_CXX_FLAGS "${CXX_FLAG_SET}")
-    string(REPLACE ";" " " LOCAL_CMAKE_EXE_LINKER_FLAGS "${EXE_LINKER_FLAG_SET}")
-    string(REPLACE ";" " " LOCAL_CMAKE_ASM_FLAGS "${ASM_FLAG_SET}")
+    list(JOIN C_FLAG_SET " " LOCAL_CMAKE_C_FLAGS)
+    list(JOIN CXX_FLAG_SET " " LOCAL_CMAKE_CXX_FLAGS)
+    list(JOIN EXE_LINKER_FLAG_SET " " LOCAL_CMAKE_EXE_LINKER_FLAGS)
+    list(JOIN ASM_FLAG_SET " " LOCAL_CMAKE_ASM_FLAGS)
 
     if (NOT ARG_OVERRIDE_C_STD STREQUAL "")
         replace_c_std(${ARG_OVERRIDE_C_STD} LOCAL_CMAKE_C_FLAGS)
@@ -129,30 +129,28 @@ endfunction()
 # | UNIT TESTING
 # +===========================================================================+
 #
-# function: define_native_unit_test - creates an executable target and links it
-# to the "all" target to build a gtest binary for the given test source.
+# function: define_unit_test - creates an archive containing tests to link into
+# one or more test runner. This allows running the same unit tests on multiple
+# targets.
 #
-# param: ARG_FRAMEWORK string - The name of the test framework to use.
-# param: ARG_TEST_NAME string - The name to give the test binary.
-# param: ARG_TEST_SOURCE List[path] - A list of source files to compile into
-#                               the test binary.
-# param: ARG_OUTDIR path - A path to output test binaries and coverage data under.
+# param: ARG_TEST_NAME string           - A unique name for the test archive.
+# param: ARG_TEST_SOURCE List[path]     - A list of source files to compile into
+#                        the test binary.
 # param: ARG_EXTRA_COMPILE_FLAGS string - Additional compile arguments to set for
 #                        the ARG_TEST_SOURCE files in addition to the arguments
 #                        used for the current toolchain and language.
-# param: ... List[str] - Zero to many targets that generate types under test.
+# param: ... List[str] - Zero to many targets to link the test against.
 #
-function(define_native_unit_test
-         ARG_FRAMEWORK
+function(define_unit_test
          ARG_TEST_NAME
-         ARG_TEST_SOURCE
          ARG_OUTDIR
+         ARG_TEST_SOURCE
          ARG_EXTRA_COMPILE_FLAGS)
 
-    add_executable(${ARG_TEST_NAME} ${ARG_TEST_SOURCE})
+    add_library(${ARG_TEST_NAME} STATIC EXCLUDE_FROM_ALL ${ARG_TEST_SOURCE})
 
     if(NOT "${ARG_EXTRA_COMPILE_FLAGS}" STREQUAL "")
-        string(REPLACE ";" " " LOCAL_${ARG_TEST_NAME}_COMPILE_FLAGS "${ARG_EXTRA_COMPILE_FLAGS}")
+        list(JOIN ARG_EXTRA_COMPILE_FLAGS " "  LOCAL_${ARG_TEST_NAME}_COMPILE_FLAGS)
         set_source_files_properties(${ARG_TEST_SOURCE}
                                     PROPERTIES
                                     COMPILE_FLAGS
@@ -162,17 +160,64 @@ function(define_native_unit_test
 
     set(LOCAL_${ARG_TEST_NAME}_LINK_LIBS "")
 
-    if (${ARGC} GREATER 5)
+    if (${ARGC} GREATER 3)
         MATH(EXPR ARG_N_LAST "${ARGC}-1")
-        foreach(ARG_N RANGE 5 ${ARG_N_LAST})
+        foreach(ARG_N RANGE 3 ${ARG_N_LAST})
             list(APPEND LOCAL_${ARG_TEST_NAME}_LINK_LIBS ${ARGV${ARG_N}})
         endforeach(ARG_N)
     endif()
 
-    target_link_libraries(${ARG_TEST_NAME} ${LOCAL_${ARG_TEST_NAME}_LINK_LIBS} "${ARG_EXTRA_COMPILE_FLAGS}")
+    target_link_libraries(${ARG_TEST_NAME}
+        PUBLIC
+        ${LOCAL_${ARG_TEST_NAME}_LINK_LIBS}
+        PRIVATE
+        "${ARG_EXTRA_COMPILE_FLAGS}"
+    )
+
+    set_target_properties(${ARG_TEST_NAME}
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${ARG_OUTDIR}"
+    )
+
+endfunction()
+
+#
+# function: define_unit_test_runner - creates a target to build a test runner and links it
+# to the "all" target.
+#
+# param: ARG_FRAMEWORK string - The name of the test framework to use.
+# param: ARG_TEST_NAME string - A unique name for the test runner.
+# param: ARG_OUTDIR path - A path to output test binaries and coverage data under.
+# param: ... List[str] - Zero to many test archives to include in the test runner.
+#
+function(define_unit_test_runner
+         ARG_FRAMEWORK
+         ARG_TEST_NAME
+         ARG_OUTDIR)
+
+    set(LOCAL_${ARG_TEST_NAME}_LINK_LIBS "")
+
+    if (${ARGC} GREATER 3)
+        MATH(EXPR ARG_N_LAST "${ARGC}-1")
+        foreach(ARG_N RANGE 3 ${ARG_N_LAST})
+            list(APPEND LOCAL_${ARG_TEST_NAME}_LINK_LIBS ${ARGV${ARG_N}})
+        endforeach(ARG_N)
+    endif()
+
+    set(NUNAVUT_TEST_NAME ${ARG_TEST_NAME})
+
+    configure_file(${CMAKE_MODULE_PATH}/test_config.c
+                   ${ARG_OUTDIR}/${ARG_TEST_NAME}_config.c)
+
+
+    add_executable(${ARG_TEST_NAME} EXCLUDE_FROM_ALL ${ARG_OUTDIR}/${ARG_TEST_NAME}_config.c)
+
+    target_link_libraries(${ARG_TEST_NAME}
+                          ${LOCAL_${ARG_TEST_NAME}_LINK_LIBS}
+    )
 
     if (${ARG_FRAMEWORK} STREQUAL "gtest")
-        target_link_libraries(${ARG_TEST_NAME} gmock_main)
+        target_link_libraries(${ARG_TEST_NAME} gmock_native)
     elseif (${ARG_FRAMEWORK} STREQUAL "unity")
         target_link_libraries(${ARG_TEST_NAME} unity_core)
     else()
