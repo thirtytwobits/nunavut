@@ -14,11 +14,14 @@ import pathlib
 import typing
 
 from pydsdl import read_namespace as read_dsdl_namespace
+from pydsdl.visitors import DsdlFile
 
 from nunavut._namespace import Namespace, build_namespace_tree
 from nunavut._utilities import YesNoDefault
-from nunavut.lang import LanguageContextBuilder
+from nunavut.lang import LanguageContext, LanguageContextBuilder
 from nunavut.lang._language import Language
+
+from ._dsdl_filter import DefaultFilterRule, DefinitionFilterEngine, FilteredNamespaceVisitor, FilterType, TypeFilters
 
 
 class AbstractGenerator(metaclass=abc.ABCMeta):
@@ -115,9 +118,13 @@ def create_default_generators(
     :return: Tuple with the first item being the code-generator and the second the support-library
         generator.
     """
-    from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
+    # pylint: disable=import-outside-toplevel
+    from nunavut.jinja import DSDLCodeGenerator, SupportGenerator
 
-    return (DSDLCodeGenerator(namespace, **kwargs), SupportGenerator(namespace, **kwargs))
+    return (
+        DSDLCodeGenerator(namespace, **kwargs),
+        SupportGenerator(namespace, **kwargs),
+    )
 
 
 # +---------------------------------------------------------------------------+
@@ -125,6 +132,7 @@ def create_default_generators(
 # +---------------------------------------------------------------------------+
 
 
+# pylint: disable=too-many-arguments
 def generate_types(
     language_key: str,
     root_namespace_dir: pathlib.Path,
@@ -132,7 +140,7 @@ def generate_types(
     omit_serialization_support: bool = True,
     is_dryrun: bool = False,
     allow_overwrite: bool = True,
-    lookup_directories: typing.Optional[typing.Iterable[str]] = None,
+    lookup_directories: typing.Optional[typing.Iterable[typing.Union[str, pathlib.Path]]] = None,
     allow_unregulated_fixed_port_id: bool = False,
     language_options: typing.Optional[typing.Mapping[str, typing.Any]] = None,
     include_experimental_languages: bool = False,
@@ -187,3 +195,149 @@ def generate_types(
     generator, support_generator = create_default_generators(namespace)
     support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
     generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+
+
+def _generate_types(
+    language_context: LanguageContext,
+    namespace_visitor: FilteredNamespaceVisitor,
+    root_namespace_dir: pathlib.Path,
+    out_dir: pathlib.Path,
+    omit_serialization_support: bool = True,
+    is_dryrun: bool = False,
+    allow_overwrite: bool = True,
+    lookup_directories: typing.Optional[typing.Iterable[pathlib.Path]] = None,
+    allow_unregulated_fixed_port_id: bool = False,
+    embed_auditing_info: bool = False,
+) -> typing.Tuple[typing.Set[DsdlFile], typing.Dict[pathlib.Path, typing.Set[DsdlFile]]]:
+    """
+    Generate types for a given language and namespace using the default settings and built-in templates.
+
+    :return: A list of paths to all generated files.
+    """
+    type_map = read_dsdl_namespace(
+        str(root_namespace_dir),
+        lookup_directories,
+        allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
+        visitors=[namespace_visitor],
+    )
+
+    type_map = read_dsdl_namespace(
+        str(root_namespace_dir),
+        lookup_directories,
+        allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
+        visitors=[namespace_visitor],
+    )
+    namespace = build_namespace_tree(type_map, str(root_namespace_dir), str(out_dir), language_context)
+
+    generator, support_generator = create_default_generators(namespace)
+    support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+    generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+    return namespace_visitor.get_found_types(), namespace_visitor.get_dependent_types()
+
+
+def generate_all_types(
+    language_key: str,
+    root_namespace_dirs: typing.Iterable[pathlib.Path],
+    out_dir: pathlib.Path,
+    omit_serialization_support: bool = True,
+    is_dryrun: bool = False,
+    allow_overwrite: bool = True,
+    lookup_directories: typing.Optional[typing.Iterable[pathlib.Path]] = None,
+    allow_unregulated_fixed_port_id: bool = False,
+    language_options: typing.Optional[typing.Mapping[str, typing.Any]] = None,
+    include_experimental_languages: bool = False,
+    embed_auditing_info: bool = False,
+    namespace_filters: typing.Optional[TypeFilters] = None,
+    progress_callback: typing.Callable[[pathlib.Path], None] = lambda _: None,
+    types_discovered_callback: typing.Callable[[pathlib.Path], None] = lambda _: None,
+) -> typing.Set[pathlib.Path]:
+    """
+    HUGE HACKY PROTOTYPE FUNCTION. DO NOT USE IN PRODUCTION CODE.
+    """
+    if language_options is None:
+        language_options = {}
+
+    language_context = (
+        LanguageContextBuilder(include_experimental_languages=include_experimental_languages)
+        .set_target_language(language_key)
+        .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, language_options)
+        .create()
+    )
+
+    def progress_callback_wrapper(target_file: DsdlFile) -> None:
+        progress_callback(target_file.file_path)
+
+    def types_discovered_callback_wrapper(target_file: DsdlFile) -> None:
+        types_discovered_callback(target_file.file_path)
+
+    if lookup_directories is None:
+        lookup_directories = []
+
+    all_dependent_types: typing.Dict[pathlib.Path, typing.Set[DsdlFile]] = {}
+
+    all_found_types: typing.Set[DsdlFile] = set()
+
+    for root_namespace_dir in root_namespace_dirs:
+        lookups = set(lookup_directories) | set()
+        found_types, dependent_types = _generate_types(
+            language_context,
+            FilteredNamespaceVisitor(
+                DefinitionFilterEngine.create(namespace_filters),
+                all_found_types,
+                progress_callback_wrapper,
+                types_discovered_callback_wrapper,
+            ),
+            root_namespace_dir,
+            out_dir,
+            omit_serialization_support,
+            is_dryrun,
+            allow_overwrite,
+            lookups,
+            allow_unregulated_fixed_port_id,
+            embed_auditing_info,
+        )
+        all_found_types.update(found_types)
+        for dependent_namespace, dependent_types in dependent_types.items():
+            all_dependent_types.setdefault(dependent_namespace, set()).update(dependent_types)
+
+    while len(all_dependent_types) > 0:
+        target_root, dependent_types = next(iter(all_dependent_types.items()))
+        all_dependent_types.pop(target_root)
+        new_whitelist = {
+            (
+                FilterType.FULL_NAME_AND_VERSION,
+                r"{}\.{}\.{}".format(
+                    dependent_type.full_name.replace(".", r"\."),
+                    dependent_type.version[0],
+                    dependent_type.version[1],
+                ),
+            )
+            for dependent_type in dependent_types
+        }
+        new_filters = TypeFilters(
+            whitelist=new_whitelist, blacklist=[], filter_order=None, default_rule=DefaultFilterRule.EXCLUDE
+        )
+        found_types, more_types = _generate_types(
+            language_context,
+            FilteredNamespaceVisitor(
+                DefinitionFilterEngine.create(new_filters),
+                all_found_types,
+                progress_callback_wrapper,
+                types_discovered_callback_wrapper,
+            ),
+            target_root,
+            out_dir,
+            omit_serialization_support,
+            is_dryrun,
+            allow_overwrite,
+            lookups - {target_root},
+            allow_unregulated_fixed_port_id,
+            embed_auditing_info,
+        )
+        if len(found_types) < len(dependent_types):
+            all_dependent_types.setdefault(target_root, set()).update(dependent_types - found_types)
+        all_found_types.update(found_types)
+        for dependent_namespace, dependent_types in more_types.items():
+            all_dependent_types.setdefault(dependent_namespace, set()).update(dependent_types)
+
+    return {dependent_type.file_path for dependent_type in all_dependent_types.values()}
