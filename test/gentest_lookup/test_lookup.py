@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 
 from pydsdl import read_namespace
-from nunavut import build_namespace_tree, Namespace
+from nunavut import Namespace, NamespaceFactory
 from nunavut.lang import LanguageContextBuilder
 from nunavut.jinja import DSDLCodeGenerator
 from nunavut._utilities import TEMPLATE_SUFFIX
@@ -55,17 +55,14 @@ def test_one_template(gen_paths):  # type: ignore
     root_namespace = str(root_namespace_dir)
     serializable_types = read_namespace(root_namespace, [])
     language_context = LanguageContextBuilder(include_experimental_languages=True).set_target_language("js").create()
-    namespace = build_namespace_tree(serializable_types,
-                                     root_namespace_dir,
-                                     gen_paths.out_dir,
-                                     language_context)
+    namespace = NamespaceFactory(language_context, gen_paths.out_dir, root_namespace_dir).add_types(serializable_types)
     generator = DSDLCodeGenerator(namespace, templates_dir=gen_paths.templates_dir)
     generator.generate_all(False)
 
     outfile = gen_paths.find_outfile_in_namespace("uavcan.time.TimeSystem", namespace)
     assert (outfile is not None)
 
-    with open(str(outfile), 'r') as json_file:
+    with Path(outfile).open( 'r', encoding="utf-8") as json_file:
         json_blob = json.load(json_file)
 
     assert json_blob['uavcan.time.TimeSystem']['namespace'] == 'uavcan.time'
@@ -80,23 +77,15 @@ def test_get_templates(gen_paths):  # type: ignore
     root_namespace = str(root_namespace_dir)
     serializable_types = read_namespace(root_namespace, [])
     language_context = LanguageContextBuilder(include_experimental_languages=True).set_target_language("c").create()
-    namespace = build_namespace_tree(serializable_types,
-                                     root_namespace_dir,
-                                     gen_paths.out_dir,
-                                     language_context)
+    namespace = NamespaceFactory(language_context, gen_paths.out_dir, root_namespace_dir).add_types(serializable_types)
     generator = DSDLCodeGenerator(namespace, templates_dir=gen_paths.templates_dir)
 
     templates = generator.get_templates()
 
-    count = 0
-    for template in templates:
-        count += 1
+    count = len(list(templates))
     assert count > 0
 
     # Do it twice just to cover in-memory cache
     templates = generator.get_templates()
 
-    count = 0
-    for template in templates:
-        count += 1
-    assert count > 0
+    assert count == len(list(templates))

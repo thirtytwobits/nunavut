@@ -4,11 +4,12 @@
 # SPDX-License-Identifier: MIT
 #
 """
-    Command-line entrypoint.
+    Command line script.
 """
 
 import sys
 
-from .cli import main
+from .cli.runners import main as cli_main
 
-sys.exit(main())
+
+sys.exit(cli_main())

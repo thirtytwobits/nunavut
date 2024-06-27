@@ -6,223 +6,77 @@
 """
     Objects that utilize command-line inputs to run a program using Nunavut.
 """
+
+import abc
 import argparse
-import pathlib
+import itertools
+import logging
 import sys
-import typing
+from pathlib import Path
+from typing import Any, Callable, Iterable, Optional, Tuple
 
 from pydsdl import read_namespace as read_dsdl_namespace
 
-from nunavut._generators import create_default_generators
-from nunavut._namespace import build_namespace_tree
-from nunavut._postprocessors import (
-    ExternalProgramEditInPlace,
-    FilePostProcessor,
-    LimitEmptyLines,
-    PostProcessor,
-    SetFileMode,
-    TrimTrailingWhitespace,
-)
-from nunavut._utilities import DefaultValue, YesNoDefault
+from nunavut._generators import AbstractGenerator as Generator
+from nunavut._generators import generate_all
+from nunavut._namespace import NamespaceFactory
+from nunavut._utilities import ResourceType
 from nunavut.lang import Language, LanguageContext, LanguageContextBuilder
 
 
-class ArgparseRunner:
+# ---[ ABSTRACT RUNNER ]---------------------------------------------------------------------------------------------
+class Runner(abc.ABC):
     """
-    Runner that uses Python argparse arguments to define a run.
-
-    :param root_namespace: The root namespace to generate code for.
-    :param argparse.Namespace args: The command line arguments.
-    :param typing.Optional[typing.Union[str, typing.List[str]]] extra_includes: A list of paths to additional DSDL
-        root folders.
+    Abstract base class for runners.
     """
 
-    def __init__(
-        self,
-        root_namespace: pathlib.Path,
-        args: argparse.Namespace,
-        extra_includes: typing.Optional[typing.Union[str, typing.List[str]]],
-    ):
-        self._args = args
-
-        if extra_includes is None:
-            extra_includes = []
-        elif not isinstance(extra_includes, list):
-            extra_includes = [extra_includes]
-
-        self._extra_includes = extra_includes
-
-        #
-        # nunavut : parse inputs
-        #
-        self._language_context = self._create_language_context()
-
-        if self._args.generate_support != "only" and not self._args.list_configuration:
-            type_map = read_dsdl_namespace(
-                root_namespace,
-                self._extra_includes,
-                allow_unregulated_fixed_port_id=self._args.allow_unregulated_fixed_port_id,
-            )
-        else:
-            type_map = []
-
-        self._root_namespace = build_namespace_tree(
-            type_map, str(root_namespace), self._args.outdir, self._language_context
-        )
-
-        #
-        # nunavut : create generators
-        #
-        generator_args = {
-            "generate_namespace_types": (
-                YesNoDefault.YES if self._args.generate_namespace_types else YesNoDefault.DEFAULT
-            ),
-            "templates_dir": (pathlib.Path(self._args.templates) if self._args.templates is not None else None),
-            "support_templates_dir": (
-                pathlib.Path(self._args.support_templates) if self._args.support_templates is not None else None
-            ),
-            "trim_blocks": self._args.trim_blocks,
-            "lstrip_blocks": self._args.lstrip_blocks,
-            "post_processors": self._build_post_processor_list_from_args(),
-        }
-
-        self._generator, self._support_generator = create_default_generators(self._root_namespace, **generator_args)
-
-    def run(self) -> None:
+    @abc.abstractmethod
+    def run(self) -> int:
         """
         Perform actions defined by the arguments this object was created with. This may generate outputs where
         the arguments have requested this action.
+        """
+        raise NotImplementedError()
 
-        .. warning::
-            :meth:`setup` must be called before calling this method.
+    @property
+    @abc.abstractmethod
+    def args(self) -> argparse.Namespace:
+        """
+        Access to the arguments this object interprets.
+        """
+        raise NotImplementedError()
 
+    def new_language_context_builder_from_args(self) -> LanguageContextBuilder:
+        """
+        Uses interpreted arguments to create a new LanguageContextBuilder object.
+        :return: A new LanguageContextBuilder object based on the command line arguments.
         """
 
-        if self._args.list_outputs:
-            self._list_outputs_only()
-
-        elif self._args.list_inputs:
-            self._list_inputs_only()
-
-        elif self._args.list_configuration:
-            self._list_configuration_only()
-
-        else:
-            self._generate()
-
-    # +---------------------------------------------------------------------------------------------------------------+
-    # | PRIVATE
-    # +---------------------------------------------------------------------------------------------------------------+
-
-    def _should_generate_support(self) -> bool:
-        if self._args.generate_support == "as-needed":
-            return self._args.omit_serialization_support is None or not self._args.omit_serialization_support
-        return bool(self._args.generate_support in ("always", "only"))
-
-    def _build_ext_program_postprocessor(self, program: str) -> FilePostProcessor:
-        subprocess_args = [program]
-        if hasattr(self._args, "pp_run_program_arg") and self._args.pp_run_program_arg is not None:
-            for program_arg in self._args.pp_run_program_arg:
-                subprocess_args.append(program_arg)
-        return ExternalProgramEditInPlace(subprocess_args)
-
-    def _build_post_processor_list_from_args(self) -> typing.List[PostProcessor]:
-        """
-        Return a list of post processors setup based on the provided command-line arguments. This
-        list may be empty but the function will not return None.
-        """
-        post_processors: typing.List[PostProcessor] = []
-        if self._args.pp_trim_trailing_whitespace:
-            post_processors.append(TrimTrailingWhitespace())
-        if hasattr(self._args, "pp_max_emptylines") and self._args.pp_max_emptylines is not None:
-            post_processors.append(LimitEmptyLines(self._args.pp_max_emptylines))
-        if hasattr(self._args, "pp_run_program") and self._args.pp_run_program is not None:
-            post_processors.append(self._build_ext_program_postprocessor(self._args.pp_run_program))
-
-        post_processors.append(SetFileMode(self._args.file_mode))
-
-        return post_processors
-
-    def _create_language_context(self) -> LanguageContext:
-        language_options = {}
-        if self._args.target_endianness is not None:
-            language_options["target_endianness"] = self._args.target_endianness
-        language_options["omit_float_serialization_support"] = (
-            True if self._args.omit_float_serialization_support else DefaultValue(False)
-        )
-        language_options["enable_serialization_asserts"] = (
-            True if self._args.enable_serialization_asserts else DefaultValue(False)
-        )
-        language_options["enable_override_variable_array_capacity"] = (
-            True if self._args.enable_override_variable_array_capacity else DefaultValue(False)
-        )
-        if self._args.language_standard is not None:
-            language_options["std"] = self._args.language_standard
-
-        if self._args.configuration is None:
+        if self.args.configuration is None:
             additional_config_files = []
-        elif isinstance(self._args.configuration, pathlib.Path):
-            additional_config_files = [self._args.configuration]
+        elif isinstance(self.args.configuration, Path):
+            additional_config_files = [self.args.configuration]
         else:
-            additional_config_files = self._args.configuration
+            additional_config_files = self.args.configuration
 
-        target_language_name = self._args.target_language
+        target_language_name = self.args.target_language
 
         builder: LanguageContextBuilder = LanguageContextBuilder(
-            include_experimental_languages=self._args.experimental_languages
+            include_experimental_languages=self.args.include_experimental_languages
         )
         builder.set_target_language(target_language_name)
         builder.add_config_files(*additional_config_files)
-        builder.set_target_language_extension(self._args.output_extension)
+        builder.set_target_language_extension(self.args.output_extension)
         builder.set_target_language_configuration_override(
-            Language.WKCV_NAMESPACE_FILE_STEM, self._args.namespace_output_stem
+            Language.WKCV_NAMESPACE_FILE_STEM, self.args.namespace_output_stem
         )
-        builder.set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, language_options)
-        return builder.create()
+        builder.set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, self.args.language_options)
+        return builder
 
-    # +---------------------------------------------------------------------------------------------------------------+
-    # | PRIVATE :: RUN METHODS
-    # +---------------------------------------------------------------------------------------------------------------+
-    def _stdout_lister(
-        self, things_to_list: typing.Iterable[typing.Any], to_string: typing.Callable[[typing.Any], str]
-    ) -> None:
-        for thing in things_to_list:
-            sys.stdout.write(to_string(thing))
-            sys.stdout.write(";")
-
-    def _list_outputs_only(self) -> None:
-        if self._args.generate_support != "only":
-            self._stdout_lister(self._generator.generate_all(is_dryrun=True), str)
-
-        if self._should_generate_support():
-            self._stdout_lister(self._support_generator.generate_all(is_dryrun=True), str)
-
-    def _list_inputs_only(self) -> None:
-        if self._args.generate_support != "only":
-            self._stdout_lister(
-                self._generator.get_templates(omit_serialization_support=self._args.omit_serialization_support),
-                lambda p: str(p.resolve()),
-            )
-
-        if self._should_generate_support():
-            self._stdout_lister(
-                self._support_generator.get_templates(omit_serialization_support=self._args.omit_serialization_support),
-                lambda p: str(p.resolve()),
-            )
-
-        if self._args.generate_support != "only":
-            if self._generator.generate_namespace_types:
-                self._stdout_lister(
-                    [x for x, _ in self._root_namespace.get_all_types()], lambda p: str(p.source_file_path.as_posix())
-                )
-            else:
-                self._stdout_lister(
-                    [x for x, _ in self._root_namespace.get_all_datatypes()],
-                    lambda p: str(p.source_file_path.as_posix()),
-                )
-
-    def _list_configuration_only(self) -> None:
-        lctx = self._language_context
+    def list_configuration(self, lctx: LanguageContext) -> None:
+        """
+        List the configuration of the language context to a yaml file.
+        """
 
         import yaml  # pylint: disable=import-outside-toplevel
 
@@ -232,19 +86,257 @@ class ArgparseRunner:
 
         yaml.dump(lctx.config.sections(), sys.stdout, allow_unicode=True)
 
-    def _generate(self) -> None:
-        if self._should_generate_support():
-            self._support_generator.generate_all(
-                is_dryrun=self._args.dry_run,
-                allow_overwrite=not self._args.no_overwrite,
-                omit_serialization_support=self._args.omit_serialization_support,
-                embed_auditing_info=self._args.embed_auditing_info,
+    def stdout_lister(
+        self,
+        things_to_list: Iterable[Any],
+        to_string: Callable[[Any], str],
+        sep: str = ";",
+        end: str = ";",
+    ) -> None:
+        """
+        Write a list of things to stdout.
+
+        :param Iterable[Any] things_to_list: The things to list.
+        :param Callable[[Any], str] to_string: A function that converts a thing to a string.
+        :param str sep: The separator to use between things.
+        :param str end: The character to print at the end.
+        """
+        first = True
+        for thing in things_to_list:
+            if first:
+                first = False
+            else:
+                sys.stdout.write(sep)
+            sys.stdout.write(to_string(thing))
+        if not first:
+            sys.stdout.write(end)
+
+
+class LegacyArgparseRunner(Runner):
+    """
+    Runner based on Python argparse. Uses pydsdl to find DSDL files using globular path resolution and contains all
+    argument handling logic in this class. The modern version of this runner delegates as much logic as possible
+    to the Nunavut library to ensure consistency between the CLI and any applications that invoke Nunavut directly.
+
+    ```
+    ██████  ███████ ██████  ██████  ███████  ██████  █████  ████████ ███████ ██████
+    ██   ██ ██      ██   ██ ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
+    ██   ██ █████   ██████  ██████  █████   ██      ███████    ██    █████   ██   ██
+    ██   ██ ██      ██      ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
+    ██████  ███████ ██      ██   ██ ███████  ██████ ██   ██    ██    ███████ ██████
+    ```
+
+    This object should be removed in a future major release of Nunavut to reduce the complexity of the codebase.
+
+    :param argparse.Namespace args: The command line arguments.
+    """
+
+    def __init__(self, args: argparse.Namespace):
+        self._args = args
+        assert self._args.legacy_mode
+
+    @property
+    def args(self) -> argparse.Namespace:
+        return self._args
+
+    def run(self) -> int:
+        lctx = self.new_language_context_builder_from_args().create()
+
+        if self._args.list_configuration:
+            self.list_configuration(lctx)
+
+        root_path = self._args.target_files[0]
+        code_generator, support_generator = self._create_generators_for_root(lctx, root_path)
+
+        if self._args.list_outputs:
+            self._list_outputs_only(code_generator, support_generator)
+
+        elif self._args.list_inputs:
+            self._list_inputs_only(code_generator, support_generator)
+
+        else:
+            self._generate(code_generator, support_generator)
+
+        return 0
+
+    # --[PRIVATE]--------------------------------------------------------------------------------------------
+
+    def _create_generators_for_root(
+        self, lctx: LanguageContext, root_namespace_path: Path
+    ) -> Tuple[Optional[Generator], Optional[Generator]]:
+
+        should_create_codegen = (self._args.resource_types & ResourceType.ONLY.value) == 0
+        should_create_supportgen = (self._args.resource_types & ResourceType.ANY.value) != 0
+        if should_create_codegen and not self._args.list_configuration:
+            type_map = read_dsdl_namespace(
+                root_namespace_path,
+                self._args.root_namespace_directories_or_names,
+                allow_unregulated_fixed_port_id=self._args.allow_unregulated_fixed_port_id,
+            )
+        else:
+            type_map = []
+
+        root_namespace = NamespaceFactory(lctx, self._args.outdir, root_namespace_path).add_types(type_map)
+
+        #
+        # nunavut : create generators
+        #
+        generator_args = {
+            "resource_types": self._args.resource_types,
+            "generate_namespace_types": self._args.generate_namespace_types,
+            "trim_blocks": self._args.trim_blocks,
+            "lstrip_blocks": self._args.lstrip_blocks,
+            "post_processors": self._args.post_processors,
+            "embed_auditing_info": self._args.embed_auditing_info,
+        }
+
+        from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
+
+        code_generator = (
+            None
+            if not should_create_codegen
+            else DSDLCodeGenerator(root_namespace, templates_dir=self._args.templates_dir, **generator_args)
+        )
+        support_generator = (
+            None
+            if not should_create_supportgen
+            else SupportGenerator(root_namespace, templates_dir=self._args.support_templates_dir, **generator_args)
+        )
+        return (code_generator, support_generator)
+
+    def _list_outputs_only(self, code_generator: Optional[Generator], support_generator: Optional[Generator]) -> None:
+        if code_generator is not None:
+            self.stdout_lister(
+                code_generator.generate_all(is_dryrun=True),
+                str,
             )
 
-        if self._args.generate_support != "only":
-            self._generator.generate_all(
+        if support_generator is not None:
+            self.stdout_lister(
+                support_generator.generate_all(is_dryrun=True),
+                str,
+            )
+
+    def _list_inputs_only(self, code_generator: Optional[Generator], support_generator: Optional[Generator]) -> None:
+
+        if support_generator is not None:
+            self.stdout_lister(
+                support_generator.get_templates(),
+                lambda p: str(p.resolve()),
+            )
+
+        if code_generator is not None:
+            self.stdout_lister(
+                code_generator.get_templates(),
+                lambda p: str(p.resolve()),
+            )
+
+            if code_generator.generate_namespace_types:
+                self.stdout_lister(
+                    [x for x, _ in code_generator.namespace.get_all_types()],
+                    lambda p: str(p.source_file_path.as_posix()),
+                )
+            else:
+                self.stdout_lister(
+                    [x for x, _ in code_generator.namespace.get_all_datatypes()],
+                    lambda p: str(p.source_file_path.as_posix()),
+                )
+
+    def _generate(self, code_generator: Optional[Generator], support_generator: Optional[Generator]) -> None:
+        if support_generator is not None:
+            support_generator.generate_all(
                 is_dryrun=self._args.dry_run,
                 allow_overwrite=not self._args.no_overwrite,
-                omit_serialization_support=self._args.omit_serialization_support,
-                embed_auditing_info=self._args.embed_auditing_info,
             )
+
+        if code_generator is not None:
+            code_generator.generate_all(
+                is_dryrun=self._args.dry_run,
+                allow_overwrite=not self._args.no_overwrite,
+            )
+
+
+class StandardArgparseRunner(Runner):
+    """
+    Runner based on Python argparse. This class delegates most of the generation logic to the :func:`generate_all`
+    method providing only additional console output on top of that method's functionality.
+
+    :param argparse.Namespace args: The command line arguments.
+    """
+
+    def __init__(self, args: argparse.Namespace):
+        self._args = args
+
+    @property
+    def args(self) -> argparse.Namespace:
+        return self._args
+
+    def run(self) -> int:
+
+        if self._args.list_configuration:
+            self.list_configuration(self.new_language_context_builder_from_args().create())
+
+        result = generate_all(**vars(self.args))
+
+        if self._args.list_outputs:
+            self.stdout_lister(result.generated_files, lambda p: str(p.resolve()), end="")
+
+        elif self._args.list_inputs:
+            input_dsdl = set()
+            for target_path, target_data in result.generator_targets.items():
+                input_dsdl.add(target_path)
+                input_dsdl.update({d.source_file_path for d in target_data.dsdl_dependencies})
+            self.stdout_lister(
+                itertools.chain(
+                    iter(result.template_files),
+                    iter(input_dsdl)
+                ),
+                lambda p: str(p.resolve()),
+                end="",
+            )
+
+        return 0
+
+
+def new_runner(args: argparse.Namespace) -> Runner:
+    """
+    Create a new ArgparseRunner based on the arguments.
+    """
+    if not args.omit_deprecated and hasattr(args, "legacy_mode") and args.legacy_mode:
+        return LegacyArgparseRunner(args)
+    return StandardArgparseRunner(args)
+
+
+# --[ MAIN ]-----------------------------------------------------------------------------------------------------------
+def main(command_line_args: Optional[Any] = None) -> int:
+    """
+    Main entry point for command-line scripts.
+    """
+
+    from . import _make_parser  # pylint: disable=import-outside-toplevel
+    from .parsers import NunavutArgumentParser  # pylint: disable=import-outside-toplevel
+
+    #
+    # Parse the command-line arguments.
+    #
+    parser = _make_parser(NunavutArgumentParser)
+
+    try:
+        import argcomplete  # pylint: disable=import-outside-toplevel
+
+        argcomplete.autocomplete(parser)
+    except ImportError:
+        logging.debug("argcomplete not installed, skipping autocomplete")
+
+    args = parser.parse_args(args=command_line_args)
+
+    #
+    # Setup Python logging.
+    #
+    fmt = "%(message)s"
+    level = {0: logging.WARNING, 1: logging.INFO, 2: logging.DEBUG}.get(args.verbose or 0, logging.DEBUG)
+    logging.basicConfig(stream=sys.stderr, level=level, format=fmt)
+
+    logging.info("Running %s using sys.prefix: %s", Path(__file__).name, sys.prefix)
+
+    return new_runner(args).run()

@@ -6,22 +6,22 @@
 """
 Test the generation of serialization support generically and for python.
 """
-import pathlib
 from pathlib import Path
 
 import pytest
 
-from nunavut import generate_types
+from nunavut import generate_all, generate_types
 from nunavut.lang import LanguageContextBuilder
 
 
 @pytest.mark.parametrize("lang_key", ["cpp", "c"])
-def test_support_headers(gen_paths, lang_key):  # type: ignore
+def test_support_headers_legacy(gen_paths, lang_key):  # type: ignore
     """
     Test that the support headers are generated/copied.
     """
+    include_experimental_languages = lang_key == "cpp"
     ln = (
-        LanguageContextBuilder(include_experimental_languages=(lang_key == "cpp"))
+        LanguageContextBuilder(include_experimental_languages=include_experimental_languages)
         .set_target_language(lang_key)
         .create()
         .get_target_language()
@@ -37,18 +37,41 @@ def test_support_headers(gen_paths, lang_key):  # type: ignore
         gen_paths.out_dir,
         omit_serialization_support=False,
         allow_unregulated_fixed_port_id=True,
-        include_experimental_languages=(lang_key == "cpp"),
+        include_experimental_languages=include_experimental_languages,
     )
 
     assert expected_header.exists()
 
 
 @pytest.mark.parametrize("lang_key", ["cpp", "c"])
-def test_gen_with_serialization_basic(gen_paths, lang_key):  # type: ignore
+def test_support_headers(gen_paths, lang_key):  # type: ignore
+    """
+    Test that the support headers are generated/copied.
+    """
+    root_namespace_dir = gen_paths.dsdl_dir / Path("basic")
+    result = generate_all(
+        lang_key,
+        [],
+        root_namespace_dir,
+        gen_paths.out_dir,
+        omit_serialization_support=False,
+        allow_unregulated_fixed_port_id=True,
+        include_experimental_languages=(lang_key == "cpp"),
+    )
+
+    ln = result.lctx.get_target_language()
+    assert ln is not None
+    expected_header = gen_paths.out_dir / Path(*ln.support_namespace) / Path("serialization").with_suffix(ln.extension)
+
+    assert expected_header.exists()
+
+
+@pytest.mark.parametrize("lang_key", ["cpp", "c"])
+def test_gen_with_serialization_basic_legacy(gen_paths, lang_key):  # type: ignore
     """
     Sanity test. See test_gen_with_serialization_complex for details.
     """
-    basic_types = gen_paths.dsdl_dir / pathlib.Path("basic")
+    basic_types = gen_paths.dsdl_dir / Path("basic")
     generate_types(
         lang_key,
         basic_types,
@@ -60,14 +83,33 @@ def test_gen_with_serialization_basic(gen_paths, lang_key):  # type: ignore
 
 
 @pytest.mark.parametrize("lang_key", ["cpp", "c"])
-def test_gen_with_serialization_complex(gen_paths, lang_key):  # type: ignore
+def test_gen_with_serialization_basic(gen_paths, lang_key):  # type: ignore
+    """
+    Sanity test. See test_gen_with_serialization_complex for details.
+    """
+    basic_types = [
+        Path("basic", "Basic.1.0.dsdl"),
+        Path("basic", "1.HelloSerialization.1.0.dsdl"),
+    ]
+    generate_all(
+        lang_key,
+        basic_types,
+        gen_paths.dsdl_dir / Path("basic"),
+        gen_paths.out_dir,
+        allow_unregulated_fixed_port_id=True,
+        include_experimental_languages=(lang_key == "cpp"),
+    )
+
+
+@pytest.mark.parametrize("lang_key", ["cpp", "c"])
+def test_gen_with_serialization_complex_legacy(gen_paths, lang_key):  # type: ignore
     """
     Sanity test that generates some types with serialization code. We need the verification tests
     to do full tests on the code that was generated (i.e. you need a C compiler and C unit tests to
     verify the generated C serialization routines).
     """
-    basic_types = gen_paths.dsdl_dir / pathlib.Path("basic")
-    complex_types = gen_paths.dsdl_dir / pathlib.Path("complex")
+    basic_types = gen_paths.dsdl_dir / Path("basic")
+    complex_types = gen_paths.dsdl_dir / Path("complex")
     generate_types(
         lang_key,
         complex_types,
@@ -77,3 +119,33 @@ def test_gen_with_serialization_complex(gen_paths, lang_key):  # type: ignore
         allow_unregulated_fixed_port_id=True,
         include_experimental_languages=(lang_key == "cpp"),
     )
+
+@pytest.mark.parametrize("lang_key", ["cpp", "c"])
+def test_gen_with_serialization_complex(gen_paths, lang_key):  # type: ignore
+    """
+    Sanity test that generates some types with serialization code. We need the verification tests
+    to do full tests on the code that was generated (i.e. you need a C compiler and C unit tests to
+    verify the generated C serialization routines).
+    """
+    target_types = [
+        Path("basic", "Basic.1.0.dsdl"),
+        Path("basic", "1.HelloSerialization.1.0.dsdl"),
+        Path("complex", "2.KitchenSink.1.0.dsdl"),
+    ]
+    root_paths = [
+        gen_paths.dsdl_dir / Path("basic"),
+        gen_paths.dsdl_dir / Path("complex")
+    ]
+
+    result = generate_all(
+        lang_key,
+        target_types,
+        root_paths,
+        gen_paths.out_dir,
+        allow_unregulated_fixed_port_id=True,
+        include_experimental_languages=(lang_key == "cpp"),
+    )
+
+    assert 7 == len(result.generator_targets)
+    # 8 is the number of dsdl types plus a serialization support file.
+    assert 8 == len(result.generated_files)

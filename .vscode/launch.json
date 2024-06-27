@@ -26,6 +26,7 @@
                 "--rootdir=${workspaceFolder}",
                 "${file}"
             ],
+            "justMyCode": false,
             "cwd": "${workspaceFolder}"
         },
         {
