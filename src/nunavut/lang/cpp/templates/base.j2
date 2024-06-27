@@ -81,7 +81,11 @@
 // +-------------------------------------------------------------------------------------------------------------------+
 {% endif -%}
 static_assert( nunavut::support::options::{{ key | id }} == {{ value | ln.c.to_static_assertion_value }},
-              "{{ T.source_file_path.as_posix() }} "
+{%- if nunavut.embed_auditing_info %}
+              "{{ T.source_file_path.as_posix() }}"
+{%- else %}
+              "{{ T.full_name }}.{{T.version.major}}.{{T.version.minor}}"
+{%- endif %}
               "is trying to use a serialization library that was compiled with "
               "different language options. This is dangerous and therefore not "
               "allowed." );
