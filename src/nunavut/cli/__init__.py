@@ -9,8 +9,6 @@
 """
 
 import argparse
-import logging
-import os
 import pathlib
 import sys
 import textwrap
@@ -78,10 +76,10 @@ def _make_parser() -> argparse.ArgumentParser:
         **Example Usage**::
 
             # This would include j2 templates for a folder named 'c_jinja'
-            # and generate .h files into a directory named 'include' using
-            # dsdl root namespaces found under a folder named 'dsdl'.
+            # and generate .h files into a directory named 'include' for
+            # the uavcan.node.Heartbeat.1.0 data type and its dependencies
 
-            nnvg --outdir include --templates c_jinja -e .h dsdl
+            nnvg --outdir include --templates c_jinja -e .h dsdl/uavcan::node/7509.Heartbeat.1.0.dsdl
 
     """
     )
@@ -92,7 +90,85 @@ def _make_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
-    parser.add_argument("root_namespace", default=".", nargs="?", help="A source directory with DSDL definitions.")
+    parser.add_argument(
+        "--path-to-root",
+        "-r",
+        action="append",
+        help=textwrap.dedent(
+            """
+        When operating on a target set of dsdl files this argument is required to specify
+        a set of valid paths to or folder names of root namespaces. For example:
+
+            nnvg types/animals/felines/Tabby.1.0.dsdl types/animals/canines/Boxer.1.0.dsdl
+
+        will fail unless the path describing the root is provided:
+
+            nnvg --path-to-root types/animals types/animals/cats/Tabby.1.0.dsdl types/animals/dogs/Boxer.1.0.dsdl
+
+        If multiple roots are targeted then each root path will need to be enabled:
+
+            nnvg -r types/animals -r types/plants types/animals/cats/Tabby.1.0.dsdl types/plants/trees/Fir.1.0.dsdl
+
+        An additional syntax is supported where the root can be specified as part of the target
+        path using a colon to separate the two which obviates the need to provide this argument:
+
+            nnvg types/animals:cats/Tabby.1.0.dsdl types/plants:trees/Fir.1.0.dsdl
+
+        When in legacy mode (given a single path, not target files) this argument is ignored.
+
+    """
+        ).lstrip(),
+    )
+
+    parser.add_argument(
+        "target_files_or_root_namespace",
+        default=".",
+        nargs="*",
+        help=textwrap.dedent(
+            """
+
+        One or more dsdl files to generate from.
+
+        All dependent types found in the target dsdl files will be generated and must be
+        available either as another target or as a dsdl file under one of the --lookup-dir
+        directories.
+
+        A --path-to-root argument for each unique root path among the list of files is
+        required if not using the colon syntax.
+
+        Colon Syntax:
+
+            The standard syntax allows the path to the root to be specified at the same
+            time as the type:
+
+                path/to/root:name/space/Type.1.0.dsdl
+
+            This also adds the path to a list of valid paths. You can continue to specify
+            it (duplicates are ignored) or you can specify it once:
+
+                path/to/root:name/space/Type.1.0.dsdl name/space/Type.1.0.dsdl
+
+                ...is the same as...
+
+                path/to/root:name/space/Type.1.0.dsdl path/to/root:name/space/Type.1.0.dsdl
+
+            Two colons do everything described above but also adds the path-to-root to
+            the list of lookup directories (--lookup-dir):
+
+                path/to/uavcan::node/7509.Heartbeat.1.0.dsdl node/430.GetInfo.1.0.dsdl
+
+                ...node.Health.1.0 will also be generated because the Heartbeat
+                   depends on it and it can be found under path/to/uavcan
+
+
+        Deprecated/Legacy Behaviour:
+
+            If a single path is provided then this script runs in legacy mode where this path
+            is treated as a root namespace to generate types from. In this mode no dependent
+            types will be generated unless they are also found under this folder.
+    """
+        ).lstrip(),
+    )
 
     parser.add_argument(
         "--lookup-dir",
@@ -111,6 +187,9 @@ def _make_parser() -> argparse.ArgumentParser:
         Additional directories can also be specified through an environment variable
         DSDL_INCLUDE_PATH where the path entries are separated by colons ":" on
         posix systems and ";" on Windows.
+
+        CYPHAL_PATH will also be used to create additional includes where each folder
+        directly under this path will a lookup directory.
 
     """
         ).lstrip(),
@@ -577,47 +656,3 @@ def _make_parser() -> argparse.ArgumentParser:
     )
 
     return parser
-
-
-def _extra_includes_from_env(env_var_name: str) -> typing.List[str]:
-    try:
-        extra_includes_from_env = os.environ[env_var_name].split(os.pathsep)
-        logging.info("Additional include directories from %s: %s", env_var_name, str(extra_includes_from_env))
-        return extra_includes_from_env
-    except KeyError:
-        return []
-
-
-def main() -> int:
-    """
-    Main entry point for this program.
-    """
-
-    #
-    # Parse the command-line arguments.
-    #
-    args = _make_parser().parse_args()
-
-    #
-    # Setup Python logging.
-    #
-    fmt = "%(message)s"
-    level = {0: logging.WARNING, 1: logging.INFO, 2: logging.DEBUG}.get(args.verbose or 0, logging.DEBUG)
-    logging.basicConfig(stream=sys.stderr, level=level, format=fmt)
-
-    logging.info("Running %s using sys.prefix: %s", pathlib.Path(__file__).name, sys.prefix)
-
-    #
-    # Parse DSDL_INCLUDE_PATH
-    #
-    extra_includes: typing.List[str] = args.lookup_dir if args.lookup_dir is not None else []
-
-    extra_includes_from_env = _extra_includes_from_env("DSDL_INCLUDE_PATH")
-    extra_includes += sorted(extra_includes_from_env)
-
-    # pylint: disable=import-outside-toplevel
-    from nunavut.cli.runners import ArgparseRunner
-
-    runner = ArgparseRunner(args.root_namespace, args, extra_includes)
-    runner.run()
-    return 0

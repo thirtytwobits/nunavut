@@ -148,6 +148,22 @@ Where to find more examples to get started:
 
 2. API usage examples can be found in the `Pycyphal`_ library.
 
+Extras
+------
+
+Support for shell autocomplete (see `argcomplete docs`_ for full details)
+
+```
+pip install "nunavut[shell]"
+
+# if you haven't setup argcomplete ever...
+activate-global-python-argcomplete
+source ~/.my_shell_rc_thingy_see_argcomplete_docs
+
+# now register nnvg with argcomplete
+eval "$(register-python-argcomplete nnvg)"
+```
+
 ************************************************
 Bundled third-party software
 ************************************************
@@ -189,6 +205,7 @@ Nunavut is part of the OpenCyphal project:
 .. _`Jinja2`: https://palletsprojects.com/p/jinja
 .. _`markupsafe`: https://palletsprojects.com/p/markupsafe
 .. _`Canadian territory`: https://en.wikipedia.org/wiki/Nunavut
+.. _`argcomplete docs`: https://kislyuk.github.io/argcomplete/
 
 .. |badge_forum| image:: https://img.shields.io/discourse/https/forum.opencyphal.org/users.svg
     :alt: OpenCyphal forum

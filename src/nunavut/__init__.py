@@ -11,65 +11,15 @@ text files are often source code this module could also be used to generate
 documentation or data interchange formats like JSON or XML.
 
 The input to the nunavut library is a list of templates and a list of
-``pydsdl.pydsdl.CompositeType`` objects. The latter is typically obtained
-by calling pydsdl::
-
-    from pydsdl import read_namespace
-
-    compound_types = read_namespace(root_namespace, include_paths)
-
-Next a :class:`nunavut.LanguageContext` is needed which is used to
-configure all Nunavut objects for a specific target language
-
-    .. code-block:: python
-
-        from nunavut import LanguageContextBuilder
-
-        # Here we are going to generate C headers.
-        language_context = LanguageContextBuilder().set_target_language("c").create()
-
-:class:`nunavut.AbstractGenerator` objects require
-a :class:`nunavut.Namespace` tree which can be built from the
-pydsdl type map using :meth:`nunavut.build_namespace_tree`::
-
-    from nunavut import build_namespace_tree
-
-    root_namespace = build_namespace_tree(compound_types,
-                                          root_ns_folder,
-                                          out_dir,
-                                          language_context)
-
-Putting this all together, the typical use of this library looks something like this::
-
-    from pydsdl import read_namespace
-    from nunavut import build_namespace_tree
-    from nunavut.lang import LanguageContextBuilder
-    from nunavut.jinja import DSDLCodeGenerator
-
-    # parse the dsdl
-    compound_types = read_namespace(root_namespace, include_paths)
-
-    # select a target language
-    language_context = LanguageContextBuilder().set_target_language("c").create()
-
-
-    # build the namespace tree
-    root_namespace = build_namespace_tree(compound_types,
-                                          root_ns_folder,
-                                          out_dir,
-                                          language_context)
-
-    # give the root namespace to the generator and...
-    generator = DSDLCodeGenerator(root_namespace)
-
-    # generate all the code!
-    generator.generate_all()
+``pydsdl.pydsdl.CompositeType`` objects. Typical use of this library is simply
+invoking the ``nunavut.generate_all`` method.
 
 """
 import sys as _sys
 
 from ._generators import AbstractGenerator
 from ._generators import generate_types
+from ._generators import generate_all
 from ._namespace import Namespace
 from ._namespace import build_namespace_tree
 from ._utilities import TEMPLATE_SUFFIX
@@ -102,6 +52,7 @@ __all__ = [
     "CodeGenerator",
     "DSDLCodeGenerator",
     "generate_types",
+    "generate_all",
     "LanguageConfig",
     "DefaultValue",
     "Language",

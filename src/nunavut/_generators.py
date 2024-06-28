@@ -10,10 +10,13 @@ pydsdl AST into source code.
 """
 
 import abc
+import itertools
 import pathlib
 import typing
 
 from pydsdl import read_namespace as read_dsdl_namespace
+from pydsdl import read_files as read_dsdl_files
+from pydsdl import CompositeType
 
 from nunavut._namespace import Namespace, build_namespace_tree
 from nunavut._utilities import YesNoDefault
@@ -139,8 +142,22 @@ def generate_types(
     embed_auditing_info: bool = False,
 ) -> None:
     """
-    Helper method that uses default settings and built-in templates to generate types for a given
-    language. This method is the most direct way to generate code using Nunavut.
+    Deprecated; use `generate_all` instead.
+
+    This method is deprecated as it relies on globular file discovery which may cause different results on different
+    platforms. Furthermore, this method will not generate dependant types, instead, only generating types found under
+    the `root_namespace_dir` (i.e. types found in the lookup directories will not be generated).
+
+    ```
+    ██████  ███████ ██████  ██████  ███████  ██████  █████  ████████ ███████ ██████
+    ██   ██ ██      ██   ██ ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
+    ██   ██ █████   ██████  ██████  █████   ██      ███████    ██    █████   ██   ██
+    ██   ██ ██      ██      ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
+    ██████  ███████ ██      ██   ██ ███████  ██████ ██   ██    ██    ███████ ██████
+    ```
+
+    Use `generate_all` instead which takes a list of target types and will generate code for both the specified types
+    and any dependant types. Also, generation of .d files is only supported when using `generate_all`.
 
     :param str language_key: The name of the language to generate source for.
                 See the :doc:`../../docs/templates` for details on available language support.
@@ -187,3 +204,100 @@ def generate_types(
     generator, support_generator = create_default_generators(namespace)
     support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
     generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+
+
+def generate_all(
+    language_key: str,
+    target_dsdl_files: typing.Iterable[typing.Union[str, pathlib.Path]],
+    root_namespace_directories_or_names: typing.Iterable[typing.Union[str, pathlib.Path]],
+    out_dir: pathlib.Path,
+    omit_serialization_support: bool = True,
+    is_dryrun: bool = False,
+    allow_overwrite: bool = True,
+    lookup_directories: typing.Iterable[typing.Union[str, pathlib.Path]] = None,
+    allow_unregulated_fixed_port_id: bool = False,
+    language_options: typing.Optional[typing.Mapping[str, typing.Any]] = None,
+    include_experimental_languages: bool = False,
+    embed_auditing_info: bool = False,
+) -> None:
+    """
+    Helper method that uses default settings and built-in templates to generate types for a given
+    language. This method is the most direct way to generate code using Nunavut.
+
+    :param str language_key: The name of the language to generate source for.
+                See the :doc:`../../docs/templates` for details on available language support.
+    :param target_dsdl_files: A list of paths to dsdl files. This method will generate code for these files and their
+                dependant types.
+    :param root_namespace_directories_or_names: This can be a set of names of root namespaces or relative paths to
+        root namespaces. All ``dsdl_files`` provided must be under one of these roots. For example, given:
+
+        .. code-block:: python
+
+            target_dsdl_files = [
+                            Path("workspace/project/types/animals/felines/Tabby.1.0.dsdl"),
+                            Path("workspace/project/types/animals/canines/Boxer.1.0.dsdl"),
+                            Path("workspace/project/types/plants/trees/DouglasFir.1.0.dsdl")
+                        ]
+
+
+        then this argument must be one of:
+
+        .. code-block:: python
+
+            root_namespace_directories_or_names = ["animals", "plants"]
+
+            root_namespace_directories_or_names = [
+                                                    Path("workspace/project/types/animals"),
+                                                    Path("workspace/project/types/plants")
+                        ]
+
+
+    :param pathlib.Path out_dir: The path to generate code at and under.
+    :param bool omit_serialization_support: If True then logic used to serialize and deserialize data is omitted.
+    :param bool is_dryrun: If True then nothing is generated but all other activity is performed and any errors
+                that would have occurred are reported.
+    :param bool allow_overwrite: If True then generated files are allowed to overwrite existing files under the
+                `out_dir` path.
+    :param typing.Optional[typing.Iterable[str]] lookup_directories: Directories to search for dependent
+                types when included within DSDL files.
+    :param bool allow_unregulated_fixed_port_id: If True then errors will become warning when using fixed port
+                identifiers for unregulated datatypes.
+    :param typing.Optional[typing.Mapping[str, typing.Any]] language_options: Opaque arguments passed through to the
+                language objects. The supported arguments and valid values are different depending on the language
+                specified by the `language_key` parameter.
+    :param bool include_experimental_languages: If true then experimental languages will also be available.
+    :param embed_auditing_info: If True then additional information about the inputs and environment used to
+                                generate source will be embedded in the generated files at the cost of build
+                                reproducibility.
+    """
+    if language_options is None:
+        language_options = {}
+
+    language_context = (
+        LanguageContextBuilder(include_experimental_languages=include_experimental_languages)
+        .set_target_language(language_key)
+        .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, language_options)
+        .create()
+    )
+
+    if lookup_directories is None:
+        lookup_directories = []
+
+    dsdl_files = read_dsdl_files(
+        target_dsdl_files,
+        root_namespace_directories_or_names,
+        lookup_directories,
+        allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
+    )
+
+    dsdl_files_by_namespace: dict[pathlib.Path, list[CompositeType]] = {}
+    for dsdl_file in itertools.chain(dsdl_files[0], dsdl_files[1]):
+        root_path = dsdl_file.source_file_path_to_root
+        dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
+
+    for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
+        namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(out_dir), language_context)
+
+        generator, support_generator = create_default_generators(namespace)
+        support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+        generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)

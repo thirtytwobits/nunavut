@@ -7,7 +7,7 @@ import typing
 from pathlib import Path
 
 import pytest
-from nunavut import generate_types
+from nunavut import generate_types, generate_all
 
 
 @pytest.mark.parametrize(
@@ -33,11 +33,70 @@ def test_realgen(
     Cyphal types and generates code for each internally supported language.
     """
     root_namespace_dir = gen_paths.root_dir / Path("submodules") / Path("public_regulated_data_types") / Path("uavcan")
+
+    targets = list(root_namespace_dir.glob("**/*.dsdl"))
+
+    assert len(targets) > 100
+    # Sanity check that we found the dsdl source.
+
+    generate_all(
+        lang_key,
+        targets,
+        root_namespace_dir,
+        gen_paths.out_dir,
+        omit_serialization_support=not generate_support,
+        language_options=language_options,
+        include_experimental_languages=True,
+    )
+
+
+def test_realgen_heartbeat(
+    gen_paths: typing.Any
+) -> None:
+    """
+    Sanity test that generates the heartbeat message from the public types, ensuring its dependent types are also
+    generated.
+    """
+    root_namespace_dir = gen_paths.root_dir / Path("submodules") / Path("public_regulated_data_types") / Path("uavcan")
+
+    heartbeat = root_namespace_dir / Path("node", "7509.Heartbeat.1.0.dsdl")
+
+    assert heartbeat.exists()
+
+    generate_all(
+        "c",
+        [heartbeat],
+        root_namespace_dir,
+        gen_paths.out_dir,
+        omit_serialization_support=False
+    )
+
+    assert (gen_paths.out_dir / Path("uavcan", "node", "Heartbeat_1_0.h")).exists()
+    assert (gen_paths.out_dir / Path("nunavut", "support", "serialization.h")).exists()
+    assert (gen_paths.out_dir / Path("uavcan", "node", "Health_1_0.h")).exists()
+    assert (gen_paths.out_dir / Path("uavcan", "node", "Mode_1_0.h")).exists()
+
+
+@pytest.mark.parametrize(
+    "lang_key,generate_support,language_options",
+    [("c", True, {})],
+)
+def test_realgen_deprecated(
+    gen_paths: typing.Any,
+    lang_key: str,
+    generate_support: bool,
+    language_options: typing.Mapping[str, typing.Any],
+) -> None:
+    """
+    Sanity test that runs through the entire public, regulated set of
+    Cyphal types and generates code for a select set of supported languages using the legacy generate_types method.
+    """
+    root_namespace_dir = gen_paths.root_dir / Path("submodules") / Path("public_regulated_data_types") / Path("uavcan")
     generate_types(
         lang_key,
         root_namespace_dir,
         gen_paths.out_dir,
         omit_serialization_support=not generate_support,
         language_options=language_options,
-        include_experimental_languages=True
+        include_experimental_languages=True,
     )

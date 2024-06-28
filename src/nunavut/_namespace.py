@@ -78,6 +78,13 @@ class Namespace(pydsdl.Any):
         """
         return self._output_folder
 
+    @property
+    def output_path(self) -> pathlib.Path:
+        """
+        Path to the namespaces output file.
+        """
+        return self._output_path
+
     def get_support_output_folder(self) -> pathlib.PurePath:
         """
         The folder under which support artifacts are generated.
@@ -148,7 +155,7 @@ class Namespace(pydsdl.Any):
         :raises KeyError: If the type was not found in this namespace tree.
         """
         if isinstance(any_type, Namespace):
-            return any_type._output_path
+            return any_type.output_path
         else:
             try:
                 return self._data_type_to_outputs[any_type]
@@ -240,7 +247,7 @@ class Namespace(pydsdl.Any):
     def _recursive_namespace_generator(
         cls, namespace: "Namespace"
     ) -> typing.Generator[typing.Tuple["Namespace", pathlib.Path], None, None]:
-        yield (namespace, namespace._output_path)
+        yield (namespace, namespace.output_path)
 
         for nested_namespace in namespace.get_nested_namespaces():
             yield from cls._recursive_namespace_generator(nested_namespace)
@@ -249,7 +256,7 @@ class Namespace(pydsdl.Any):
     def _recursive_data_type_and_namespace_generator(
         cls, namespace: "Namespace"
     ) -> typing.Generator[typing.Tuple[pydsdl.Any, pathlib.Path], None, None]:
-        yield (namespace, namespace._output_path)
+        yield (namespace, namespace.output_path)
 
         for data_type, output_path in namespace.get_nested_types():
             yield (data_type, output_path)
