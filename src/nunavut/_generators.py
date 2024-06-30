@@ -11,8 +11,10 @@ pydsdl AST into source code.
 
 import abc
 import itertools
-import pathlib
 import typing
+
+from dataclasses import dataclass
+from pathlib import Path
 
 from pydsdl import read_namespace as read_dsdl_namespace
 from pydsdl import read_files as read_dsdl_files
@@ -22,6 +24,17 @@ from nunavut._namespace import Namespace, build_namespace_tree
 from nunavut._utilities import YesNoDefault
 from nunavut.lang import LanguageContextBuilder
 from nunavut.lang._language import Language
+
+
+@dataclass
+class GenerationResult:
+    """
+    A simple data class to hold the results of a generation operation.
+    """
+
+    target_files: list[tuple[Path, Path]]
+    dependent_files: list[tuple[Path, Path]]
+    generated_files: list[Path]
 
 
 class AbstractGenerator(metaclass=abc.ABCMeta):
@@ -71,7 +84,7 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         return self._generate_namespace_types
 
     @abc.abstractmethod
-    def get_templates(self, omit_serialization_support: bool = False) -> typing.Iterable[pathlib.Path]:
+    def get_templates(self, omit_serialization_support: bool = False) -> typing.Iterable[Path]:
         """
         Enumerate all templates found in the templates path.
         :param bool omit_serialization_support: If True then templates needed only for serialization will be omitted.
@@ -86,7 +99,7 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         allow_overwrite: bool = True,
         omit_serialization_support: bool = False,
         embed_auditing_info: bool = False,
-    ) -> typing.Iterable[pathlib.Path]:
+    ) -> typing.Iterable[Path]:
         """
         Generates all output for a given :class:`nunavut.Namespace` and using
         the templates found by this object.
@@ -101,7 +114,7 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         :param embed_auditing_info: If True then additional information about the inputs and environment used to
                                 generate source will be embedded in the generated files at the cost of build
                                 reproducibility.
-        :return: 0 for success. Non-zero for errors.
+        :return: Iterator over the files generated.
         :raises: PermissionError if :attr:`allow_overwrite` is False and the file exists.
         """
         raise NotImplementedError()
@@ -130,8 +143,8 @@ def create_default_generators(
 
 def generate_types(
     language_key: str,
-    root_namespace_dir: pathlib.Path,
-    out_dir: pathlib.Path,
+    root_namespace_dir: Path,
+    out_dir: Path,
     omit_serialization_support: bool = True,
     is_dryrun: bool = False,
     allow_overwrite: bool = True,
@@ -140,7 +153,7 @@ def generate_types(
     language_options: typing.Optional[typing.Mapping[str, typing.Any]] = None,
     include_experimental_languages: bool = False,
     embed_auditing_info: bool = False,
-) -> None:
+) -> GenerationResult:
     """
     Deprecated; use `generate_all` instead.
 
@@ -161,9 +174,9 @@ def generate_types(
 
     :param str language_key: The name of the language to generate source for.
                 See the :doc:`../../docs/templates` for details on available language support.
-    :param pathlib.Path root_namespace_dir: The path to the root of the DSDL types to generate
+    :param Path root_namespace_dir: The path to the root of the DSDL types to generate
                 code for.
-    :param pathlib.Path out_dir: The path to generate code at and under.
+    :param Path out_dir: The path to generate code at and under.
     :param bool omit_serialization_support: If True then logic used to serialize and deserialize data is omitted.
     :param bool is_dryrun: If True then nothing is generated but all other activity is performed and any errors
                 that would have occurred are reported.
@@ -181,6 +194,8 @@ def generate_types(
     :param embed_auditing_info: If True then additional information about the inputs and environment used to
                                 generate source will be embedded in the generated files at the cost of build
                                 reproducibility.
+    :return: A tuple containing lists of target files and generated files. The dependent files list will be empty
+                as this method does not generate dependant types.
     """
     if language_options is None:
         language_options = {}
@@ -202,24 +217,34 @@ def generate_types(
     namespace = build_namespace_tree(type_map, str(root_namespace_dir), str(out_dir), language_context)
 
     generator, support_generator = create_default_generators(namespace)
-    support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
-    generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+    generated_files = list(
+        support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+    )
+
+    generated_files += list(
+        generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+    )
+    return (
+        [(ct.source_file_path_to_root, ct.source_file_path) for ct in type_map],
+        [],
+        generated_files,
+    )
 
 
 def generate_all(
     language_key: str,
-    target_dsdl_files: typing.Iterable[typing.Union[str, pathlib.Path]],
-    root_namespace_directories_or_names: typing.Iterable[typing.Union[str, pathlib.Path]],
-    out_dir: pathlib.Path,
+    target_dsdl_files: typing.Iterable[typing.Union[str, Path]],
+    root_namespace_directories_or_names: typing.Iterable[typing.Union[str, Path]],
+    out_dir: Path,
     omit_serialization_support: bool = True,
     is_dryrun: bool = False,
     allow_overwrite: bool = True,
-    lookup_directories: typing.Iterable[typing.Union[str, pathlib.Path]] = None,
+    lookup_directories: typing.Iterable[typing.Union[str, Path]] = None,
     allow_unregulated_fixed_port_id: bool = False,
     language_options: typing.Optional[typing.Mapping[str, typing.Any]] = None,
     include_experimental_languages: bool = False,
     embed_auditing_info: bool = False,
-) -> None:
+) -> GenerationResult:
     """
     Helper method that uses default settings and built-in templates to generate types for a given
     language. This method is the most direct way to generate code using Nunavut.
@@ -252,7 +277,7 @@ def generate_all(
                         ]
 
 
-    :param pathlib.Path out_dir: The path to generate code at and under.
+    :param Path out_dir: The path to generate code at and under.
     :param bool omit_serialization_support: If True then logic used to serialize and deserialize data is omitted.
     :param bool is_dryrun: If True then nothing is generated but all other activity is performed and any errors
                 that would have occurred are reported.
@@ -269,6 +294,8 @@ def generate_all(
     :param embed_auditing_info: If True then additional information about the inputs and environment used to
                                 generate source will be embedded in the generated files at the cost of build
                                 reproducibility.
+    :return: A tuple containing lists of target files, dependent files, and generated files (i.e explicit inputs,
+             implicit inputs, and outputs).
     """
     if language_options is None:
         language_options = {}
@@ -290,14 +317,26 @@ def generate_all(
         allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
     )
 
-    dsdl_files_by_namespace: dict[pathlib.Path, list[CompositeType]] = {}
+    dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
     for dsdl_file in itertools.chain(dsdl_files[0], dsdl_files[1]):
         root_path = dsdl_file.source_file_path_to_root
         dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
 
+    generated_files = []
     for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
         namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(out_dir), language_context)
 
         generator, support_generator = create_default_generators(namespace)
-        support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
-        generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+
+        generated_files += list(
+            support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+        )
+        generated_files += list(
+            generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
+        )
+
+    return (
+        [(ct.source_file_path_to_root, ct.source_file_path) for ct in dsdl_files[0]],
+        [(ct.source_file_path_to_root, ct.source_file_path) for ct in dsdl_files[1]],
+        generated_files,
+    )

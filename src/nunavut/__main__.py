@@ -12,7 +12,7 @@ import sys
 
 from pathlib import Path
 
-from .cli import _make_parser
+from .cli import make_parser
 
 
 # --[ MAIN ]-----------------------------------------------------------------------------------------------------------
@@ -24,7 +24,7 @@ def main() -> int:
     #
     # Parse the command-line arguments.
     #
-    parser = _make_parser()
+    parser = make_parser()
 
     try:
         import argcomplete  # pylint: disable=import-outside-toplevel
@@ -45,11 +45,9 @@ def main() -> int:
     logging.info("Running %s using sys.prefix: %s", Path(__file__).name, sys.prefix)
 
     # pylint: disable=import-outside-toplevel
-    from .cli.runners import ArgparseRunner
+    from .cli.runners import new_runner
 
-    # this is an object to allow different runner implementations in the future if needed. For now
-    # we only know about the one.
-    return ArgparseRunner(args).run()
+    return new_runner(args).run()
 
 
 sys.exit(main())

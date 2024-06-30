@@ -260,7 +260,7 @@ def test_version(gen_paths: typing.Any, run_nnvg: typing.Callable) -> None:
     nnvg_args = ["--version"]
 
     completed = run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8")
-    assert nunavut._version.__version__ == completed
+    assert nunavut._version.__version__ == completed  # pylint: disable=protected-access
 
 
 def test_target_language(gen_paths: typing.Any, run_nnvg: typing.Callable) -> None:
@@ -314,7 +314,7 @@ def test_language_option_defaults(gen_paths: typing.Any, run_nnvg: typing.Callab
     ]
 
     run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
-    with open(expected_output, "r") as generated:
+    with open(expected_output, "r", encoding="utf-8") as generated:
         generated_results = json.load(generated)
         assert generated_results["target_endianness"] == "any"
         assert not generated_results["omit_float_serialization_support"]
@@ -349,7 +349,7 @@ def test_language_option_overrides(
     ]
 
     run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
-    with open(expected_output, "r") as generated:
+    with open(expected_output, "r", encoding="utf-8") as generated:
         generated_results = json.load(generated)
         assert generated_results["target_endianness"] == target_endianness_override
 
@@ -402,7 +402,7 @@ def test_language_option_omit_floatingpoint(gen_paths: typing.Any, run_nnvg: typ
     ]
 
     run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
-    with open(expected_output, "r") as generated:
+    with open(expected_output, "r", encoding="utf-8") as generated:
         generated_results = json.load(generated)
         assert generated_results["omit_float_serialization_support"]
 
@@ -431,7 +431,7 @@ def test_language_option_generate_asserts(gen_paths: typing.Any, run_nnvg: typin
     ]
 
     run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
-    with open(expected_output, "r") as generated:
+    with open(expected_output, "r", encoding="utf-8") as generated:
         generated_results = json.load(generated)
         assert generated_results["enable_serialization_asserts"]
 
@@ -447,7 +447,7 @@ def test_generate_support_only(gen_paths: typing.Any, run_nnvg: typing.Callable)
 
     run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
     for expected_output_path in expected_output:
-        assert support_path.exists()
+        assert expected_output_path.exists()
 
 
 @pytest.mark.parametrize("generate_support", ["as-needed", "never", "always", "only"])
@@ -470,7 +470,7 @@ def test_generate_support(
         "c",
         "-I",
         (gen_paths.dsdl_dir / pathlib.Path("scotec")).as_posix(),
-        "--generate-support={}".format(generate_support),
+        f"--generate-support={generate_support}",
     ]
 
     if omit_serialization:
@@ -600,7 +600,7 @@ def test_list_configuration(gen_paths: typing.Any, run_nnvg: typing.Callable) ->
     """
     Verifies nnvg's --list-configuration option
     """
-    import yaml
+    import yaml  # pylint: disable=import-outside-toplevel
 
     nnvg_args = ["--list-configuration"]
 

@@ -9,11 +9,13 @@
 """
 
 import argparse
-import pathlib
 import sys
 import textwrap
 import typing
 
+from pathlib import Path
+
+from .parsers import NunavutArgumentParser
 
 class _LazyVersionAction(argparse._VersionAction):
     """
@@ -37,34 +39,7 @@ class _LazyVersionAction(argparse._VersionAction):
         parser.exit()
 
 
-class _NunavutArgumentParser(argparse.ArgumentParser):
-    """
-    Specialization of argparse.ArgumentParser to encapsulate inter-argument rules.
-    """
-
-    def parse_known_args(self, args=None, namespace=None):  # type: ignore
-        parsed_args, argv = super().parse_known_args(args, namespace)
-        self._post_process_args(parsed_args)
-        return (parsed_args, argv)
-
-    def _post_process_args(self, args: argparse.Namespace) -> None:
-        """
-        Applies rules between different arguments and handles other special cases.
-        """
-
-        if args.omit_serialization_support and args.generate_support == "always":
-            self.error(
-                textwrap.dedent(
-                    """
-                Logic error: use of --omit-serialization-support and --generate-support=always
-
-                You cannot both omit serialization support and require generation of support code.
-            """
-                ).lstrip()
-            )
-
-
-def _make_parser() -> argparse.ArgumentParser:
+def make_parser() -> argparse.ArgumentParser:
     """
     Defines the command-line interface. Provided as a separate factory method to
     support sphinx-argparse documentation.
@@ -84,7 +59,7 @@ def _make_parser() -> argparse.ArgumentParser:
     """
     )
 
-    parser = _NunavutArgumentParser(
+    parser = NunavutArgumentParser(
         description="Generate code from Cyphal DSDL using pydsdl and jinja2",
         epilog=epilog,
         formatter_class=argparse.RawTextHelpFormatter,
@@ -152,20 +127,12 @@ def _make_parser() -> argparse.ArgumentParser:
 
                 path/to/root:name/space/Type.1.0.dsdl path/to/root:name/space/Type.1.0.dsdl
 
-            Two colons do everything described above but also adds the path-to-root to
-            the list of lookup directories (--lookup-dir):
-
-                path/to/uavcan::node/7509.Heartbeat.1.0.dsdl node/430.GetInfo.1.0.dsdl
-
-                ...node.Health.1.0 will also be generated because the Heartbeat
-                   depends on it and it can be found under path/to/uavcan
-
 
         Deprecated/Legacy Behaviour:
 
-            If a single path is provided then this script runs in legacy mode where this path
-            is treated as a root namespace to generate types from. In this mode no dependent
-            types will be generated unless they are also found under this folder.
+            If a single path to a folder is provided then this script runs in legacy mode where
+            this path is treated as a root namespace to generate types from. In this mode no
+            dependent types will be generated unless they are also found under this folder.
     """
         ).lstrip(),
     )
@@ -190,6 +157,20 @@ def _make_parser() -> argparse.ArgumentParser:
 
         CYPHAL_PATH will also be used to create additional includes where each folder
         directly under this path will a lookup directory.
+
+    """
+        ).lstrip(),
+    )
+
+    parser.add_argument(
+        "--omit-dependencies",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+
+        Disables the generation of dependent types.
+
+        This option is not available in legacy mode.
 
     """
         ).lstrip(),
@@ -275,24 +256,6 @@ def _make_parser() -> argparse.ArgumentParser:
         help="The extension to use for generated files.",
     )
 
-    parser.add_argument("--dry-run", "-d", action="store_true", help="If True then no files will be generated.")
-
-    parser.add_argument(
-        "--list-outputs",
-        action="store_true",
-        help=textwrap.dedent(
-            """
-        Emit a semicolon-separated list of files.
-        (implies --dry-run)
-        Emits files that would be generated if invoked without --dry-run.
-        This command is useful for integrating with CMake and other build
-        systems that need a list of targets to determine if a rebuild is
-        necessary.
-
-    """
-        ).lstrip(),
-    )
-
     parser.add_argument(
         "--generate-support",
         choices=["always", "never", "as-needed", "only"],
@@ -305,22 +268,6 @@ def _make_parser() -> argparse.ArgumentParser:
         always - always generate support code.
         never - never generate support code.
         only - only generate support code.
-
-    """
-        ).lstrip(),
-    )
-
-    parser.add_argument(
-        "--list-inputs",
-        action="store_true",
-        help=textwrap.dedent(
-            """
-
-        Emit a semicolon-separated list of files.
-        (implies --dry-run)
-        A list of files that are resolved given input arguments like templates.
-        This command is useful for integrating with CMake and other build systems
-        that need a list of inputs to determine if a rebuild is necessary.
 
     """
         ).lstrip(),
@@ -444,6 +391,57 @@ def _make_parser() -> argparse.ArgumentParser:
         the reproducibility of your builds. For example, paths to input files used to generate
         a type may be included with this option where these paths will be different depending
         on the server used to run nnvg.
+
+    """
+        ).lstrip(),
+    )
+
+    # +-----------------------------------------------------------------------+
+    # | Operation Options
+    # +-----------------------------------------------------------------------+
+
+    run_mode_group = parser.add_argument_group(
+        "Run mode options",
+        description=textwrap.dedent(
+            """
+
+        Options that control the operation mode of the script.
+
+    """
+        ).lstrip(),
+    )
+
+    run_mode_group.add_argument("--dry-run", "-d", action="store_true", help="If True then no files will be generated.")
+
+    run_mode_ex_group = run_mode_group.add_mutually_exclusive_group()
+
+    run_mode_ex_group.add_argument(
+        "--list-outputs",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+        Emit a semicolon-separated list of files.
+        (implies --dry-run)
+        Emits files that would be generated if invoked without --dry-run.
+        This command is useful for integrating with CMake and other build
+        systems that need a list of targets to determine if a rebuild is
+        necessary.
+
+    """
+        ).lstrip(),
+    )
+
+    run_mode_ex_group.add_argument(
+        "--list-inputs",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+
+        Emit a semicolon-separated list of files.
+        (implies --dry-run)
+        A list of files that are resolved given input arguments like templates.
+        This command is useful for integrating with CMake and other build systems
+        that need a list of inputs to determine if a rebuild is necessary.
 
     """
         ).lstrip(),
@@ -630,14 +628,14 @@ def _make_parser() -> argparse.ArgumentParser:
         "--configuration",
         "-c",
         nargs="*",
-        type=pathlib.Path,
+        type=Path,
         help=textwrap.dedent(
             """
 
         There is a set of built-in configuration for Nunavut that provides default values for known
         languages as documented `in the template guide
         <https://nunavut.readthedocs.io/en/latest/docs/templates.html#language-options>`_. This argument lets you
-        specify override configuration yamls.
+        specify override configuration yaml.
     """
         ).lstrip(),
     )

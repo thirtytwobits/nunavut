@@ -85,6 +85,13 @@ class Namespace(pydsdl.Any):
         """
         return self._output_path
 
+    @property
+    def parent(self) -> typing.Optional["Namespace"]:
+        """
+        The parent namespace of this namespace or None if this is a root namespace.
+        """
+        return self._parent
+
     def get_support_output_folder(self) -> pathlib.PurePath:
         """
         The folder under which support artifacts are generated.
@@ -104,8 +111,8 @@ class Namespace(pydsdl.Any):
         :return: The root namespace object.
         """
         namespace = self  # type: Namespace
-        while namespace._parent is not None:
-            namespace = namespace._parent
+        while namespace.parent is not None:
+            namespace = namespace.parent
         return namespace
 
     def get_nested_namespaces(self) -> typing.Iterator["Namespace"]:
@@ -163,29 +170,46 @@ class Namespace(pydsdl.Any):
                 pass
 
             # We could get fancier but this should do
-            return self.get_root_namespace()._bfs_search_for_output_path(any_type, set([self]))
+            return self.get_root_namespace()._bfs_search_for_output_path(  # pylint: disable=protected-access
+                any_type, set([self])
+            )
 
     # +-----------------------------------------------------------------------+
     # | DUCK TYPING: pydsdl.CompositeType
     # +-----------------------------------------------------------------------+
     @property
     def full_name(self) -> str:
+        """
+        See :property:`pydsdl.CompositeType.full_name`_
+        """
         return self._full_namespace
 
     @property
     def full_namespace(self) -> str:
+        """
+        See :property:`pydsdl.CompositeType.full_namespace`_
+        """
         return self._full_namespace
 
     @property
     def source_file_path(self) -> pathlib.Path:
+        """
+        See :property:`pydsdl.CompositeType.source_file_path`_
+        """
         return self._source_folder
 
     @property
     def data_types(self) -> typing.KeysView[pydsdl.CompositeType]:
+        """
+        See :property:`pydsdl.CompositeType.data_types`_
+        """
         return self._data_type_to_outputs.keys()
 
     @property
     def attributes(self) -> typing.List[pydsdl.CompositeType]:
+        """
+        See :property:`pydsdl.CompositeType.attributes`_
+        """
         return []
 
     # +-----------------------------------------------------------------------+
@@ -214,7 +238,7 @@ class Namespace(pydsdl.Any):
 
     def _add_nested_namespace(self, nested: "Namespace") -> None:
         self._nested_namespaces.add(nested)
-        nested._parent = self
+        nested._parent = self  # pylint: disable=protected-access
 
     def _bfs_search_for_output_path(
         self, data_type: pydsdl.CompositeType, skip_namespace: typing.Set["Namespace"]
@@ -225,10 +249,10 @@ class Namespace(pydsdl.Any):
             namespace = search_queue.pop()
             if namespace not in skip_namespace:
                 try:
-                    return namespace._data_type_to_outputs[data_type]
+                    return namespace._data_type_to_outputs[data_type]  # pylint: disable=protected-access
                 except KeyError:
                     pass
-            for nested_namespace in namespace._nested_namespaces:
+            for nested_namespace in namespace._nested_namespaces:  # pylint: disable=protected-access
                 search_queue.appendleft(nested_namespace)
 
         raise KeyError(data_type)
@@ -350,7 +374,7 @@ def build_namespace_tree(
                     break
                 namespace_index.add(ancestor_ns)
 
-        namespace._add_data_type(
+        namespace._add_data_type(  # pylint: disable=protected-access
             dsdl_type, language_context.get_target_language().get_config_value(Language.WKCV_DEFINITION_FILE_EXTENSION)
         )
 
