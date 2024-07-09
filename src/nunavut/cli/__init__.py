@@ -48,7 +48,11 @@ def make_parser() -> argparse.ArgumentParser:
     epilog = textwrap.dedent(
         """
 
-        **Example Usage**::
+        Copyright (C) OpenCyphal Development Team  <opencyphal.org>
+        Copyright Amazon.com Inc. or its affiliates.
+        Released under SPDX-License-Identifier: MIT
+
+        **Example Usage** ::
 
             # This would include j2 templates for a folder named 'c_jinja'
             # and generate .h files into a directory named 'include' for
@@ -56,6 +60,7 @@ def make_parser() -> argparse.ArgumentParser:
 
             nnvg --outdir include --templates c_jinja -e .h dsdl/uavcan::node/7509.Heartbeat.1.0.dsdl
 
+        ᓄᓇᕗᑦ
     """
     )
 
@@ -78,11 +83,13 @@ def make_parser() -> argparse.ArgumentParser:
 
         will fail unless the path describing the root is provided:
 
-            nnvg --path-to-root types/animals types/animals/cats/Tabby.1.0.dsdl types/animals/dogs/Boxer.1.0.dsdl
+            nnvg --path-to-root types/animals types/animals/cats/Tabby.1.0.dsdl \\
+                                              types/animals/dogs/Boxer.1.0.dsdl
 
         If multiple roots are targeted then each root path will need to be enabled:
 
-            nnvg -r types/animals -r types/plants types/animals/cats/Tabby.1.0.dsdl types/plants/trees/Fir.1.0.dsdl
+            nnvg -r types/animals -r types/plants types/animals/cats/Tabby.1.0.dsdl \\
+                                                  types/plants/trees/Fir.1.0.dsdl
 
         An additional syntax is supported where the root can be specified as part of the target
         path using a colon to separate the two which obviates the need to provide this argument:
@@ -111,15 +118,16 @@ def make_parser() -> argparse.ArgumentParser:
         A --path-to-root argument for each unique root path among the list of files is
         required if not using the colon syntax.
 
-        Colon Syntax:
+        Colon Syntax
+        ------------
 
             The standard syntax allows the path to the root to be specified at the same
-            time as the type:
+            time as the type ::
 
                 path/to/root:name/space/Type.1.0.dsdl
 
             This also adds the path to a list of valid paths. You can continue to specify
-            it (duplicates are ignored) or you can specify it once:
+            it (duplicates are ignored) or you can specify it once ::
 
                 path/to/root:name/space/Type.1.0.dsdl name/space/Type.1.0.dsdl
 
@@ -128,7 +136,8 @@ def make_parser() -> argparse.ArgumentParser:
                 path/to/root:name/space/Type.1.0.dsdl path/to/root:name/space/Type.1.0.dsdl
 
 
-        Deprecated/Legacy Behaviour:
+        Deprecated/Legacy Behaviour
+        ---------------------------
 
             If a single path to a folder is provided then this script runs in legacy mode where
             this path is treated as a root namespace to generate types from. In this mode no
@@ -156,33 +165,46 @@ def make_parser() -> argparse.ArgumentParser:
         posix systems and ";" on Windows.
 
         CYPHAL_PATH will also be used to create additional includes where each folder
-        directly under this path will a lookup directory.
+        directly under this path will be a lookup directory.
 
     """
         ).lstrip(),
     )
-
-    parser.add_argument(
-        "--omit-dependencies",
-        action="store_true",
-        help=textwrap.dedent(
-            """
-
-        Disables the generation of dependent types.
-
-        This option is not available in legacy mode.
-
-    """
-        ).lstrip(),
-    )
-
-    parser.add_argument("--verbose", "-v", action="count", help="verbosity level (-v, -vv)")
-
-    parser.add_argument("--version", action=_LazyVersionAction)
 
     parser.add_argument("--outdir", "-O", default="nunavut_out", help="output directory")
 
     parser.add_argument(
+        "--target-language",
+        "-l",
+        help=textwrap.dedent(
+            """
+
+        Language support to install into the templates.
+
+        If provided then the output extension (-e) can be inferred otherwise the output
+        extension must be provided.
+
+    """
+        ).lstrip(),
+    )
+
+
+    # +-----------------------------------------------------------------------+
+    # | Extended Generation Options
+    # +-----------------------------------------------------------------------+
+
+    extended_group = parser.add_argument_group(
+        "extended options",
+        description=textwrap.dedent(
+            """
+
+        Additional options to control output generation.
+
+    """
+        ).lstrip(),
+    )
+
+    extended_group.add_argument(
         "--templates",
         help=textwrap.dedent(
             """
@@ -196,7 +218,7 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-    parser.add_argument(
+    extended_group.add_argument(
         "--support-templates",
         help=textwrap.dedent(
             """
@@ -210,28 +232,7 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-    def extension_type(raw_arg: str) -> str:
-        if len(raw_arg) > 0 and not raw_arg.startswith("."):
-            return "." + raw_arg
-        else:
-            return raw_arg
-
-    parser.add_argument(
-        "--target-language",
-        "-l",
-        help=textwrap.dedent(
-            """
-
-        Language support to install into the templates.
-
-        If provided then the output extension (--e) can be inferred otherwise the output
-        extension must be provided.
-
-    """
-        ).lstrip(),
-    )
-
-    parser.add_argument(
+    extended_group.add_argument(
         "--experimental-languages",
         "-Xlang",
         action="store_true",
@@ -249,14 +250,33 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-    parser.add_argument(
+    def extension_type(raw_arg: str) -> str:
+        if len(raw_arg) > 0 and not raw_arg.startswith("."):
+            return "." + raw_arg
+        else:
+            return raw_arg
+
+    extended_group.add_argument(
         "--output-extension",
         "-e",
         type=extension_type,
-        help="The extension to use for generated files.",
+        help=textwrap.dedent(
+            """
+        The output extension for generated files. If target language is provided an extension is
+        inferred based on language configuration. This option allows overriding this inference.
+
+        Note that, if --target-language is omitted and this argument is provided the program
+        will attempt to infer the language based on the file extension. This may lead to unexpected
+        results (e.g. `--output-extension .h` generating C instead of C++).
+
+        If a dot (.) is omitted one will be added, therefore; `-e h` and `-e .h` will both result
+        in an extension of `.h`.
+
+    """
+        ).lstrip(),
     )
 
-    parser.add_argument(
+    extended_group.add_argument(
         "--generate-support",
         choices=["always", "never", "as-needed", "only"],
         default="as-needed",
@@ -264,16 +284,20 @@ def make_parser() -> argparse.ArgumentParser:
             """
         Change the criteria used to enable or disable support code generation.
 
-        as-needed (default) - generate support code if serialization is enabled.
+        as-needed (default) - generate support if it is needed.
         always - always generate support code.
         never - never generate support code.
         only - only generate support code.
+
+        Note that serialization logic is only one type of support code. This option covers all
+        types of support code. Where `--omit-serialization-support` is set different types of
+        support code may still be generated unless this option is set to `never`.
 
     """
         ).lstrip(),
     )
 
-    parser.add_argument(
+    extended_group.add_argument(
         "--generate-namespace-types",
         action="store_true",
         help=textwrap.dedent(
@@ -290,7 +314,7 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-    parser.add_argument(
+    extended_group.add_argument(
         "--omit-serialization-support",
         "-pod",
         action="store_true",
@@ -298,18 +322,19 @@ def make_parser() -> argparse.ArgumentParser:
             """
         If provided then the types generated will be POD datatypes with no additional logic.
         By default types generated include serialization routines and additional support libraries,
-        headers, or methods.
+        headers, or methods as needed. These additional support artifacts can be suppressed using
+        the `--generate-support` option.
 
     """
         ).lstrip(),
     )
 
-    parser.add_argument(
+    extended_group.add_argument(
         "--namespace-output-stem",
         help="The name of the file generated when --generate-namespace-types is provided.",
     )
 
-    parser.add_argument(
+    extended_group.add_argument(
         "--no-overwrite",
         action="store_true",
         help=textwrap.dedent(
@@ -323,7 +348,7 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-    parser.add_argument(
+    extended_group.add_argument(
         "--file-mode",
         default=0o444,
         type=lambda value: int(value, 0),
@@ -339,33 +364,7 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-    parser.add_argument(
-        "--trim-blocks",
-        action="store_true",
-        help=textwrap.dedent(
-            """
-
-        If this is set to True the first newline after a block in a template
-        is removed (block, not variable tag!).
-
-    """
-        ).lstrip(),
-    )
-
-    parser.add_argument(
-        "--lstrip-blocks",
-        action="store_true",
-        help=textwrap.dedent(
-            """
-
-        If this is set to True leading spaces and tabs are stripped from the
-        start of a line to a block in templates.
-
-    """
-        ).lstrip(),
-    )
-
-    parser.add_argument(
+    extended_group.add_argument(
         "--allow-unregulated-fixed-port-id",
         action="store_true",
         help=textwrap.dedent(
@@ -379,7 +378,7 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-    parser.add_argument(
+    extended_group.add_argument(
         "--embed-auditing-info",
         action="store_true",
         help=textwrap.dedent(
@@ -396,12 +395,27 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
+    extended_group.add_argument(
+        "--omit-dependencies",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+
+        Disables the generation of dependent types.
+
+        This option is not available in legacy mode.
+
+    """
+        ).lstrip(),
+    )
+
+
     # +-----------------------------------------------------------------------+
     # | Operation Options
     # +-----------------------------------------------------------------------+
 
     run_mode_group = parser.add_argument_group(
-        "Run mode options",
+        "run mode options",
         description=textwrap.dedent(
             """
 
@@ -410,6 +424,10 @@ def make_parser() -> argparse.ArgumentParser:
     """
         ).lstrip(),
     )
+
+    run_mode_group.add_argument("--verbose", "-v", action="count", help="verbosity level (-v, -vv)")
+
+    run_mode_group.add_argument("--version", action=_LazyVersionAction)
 
     run_mode_group.add_argument("--dry-run", "-d", action="store_true", help="If True then no files will be generated.")
 
@@ -447,6 +465,19 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
+    run_mode_ex_group.add_argument(
+        "--list-configuration",
+        "-lc",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+
+        Lists all configuration values resolved for the given arguments.
+
+    """
+        ).lstrip(),
+    )
+
     # +-----------------------------------------------------------------------+
     # | Post-Processing Options
     # +-----------------------------------------------------------------------+
@@ -458,6 +489,32 @@ def make_parser() -> argparse.ArgumentParser:
 
         Options that enable various post-generation steps because Pavel Kirienko doesn't
         like writing jinja templates.
+
+    """
+        ).lstrip(),
+    )
+
+    ln_pp_group.add_argument(
+        "--trim-blocks",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+
+        If this is set to True the first newline after a block in a template
+        is removed (block, not variable tag!).
+
+    """
+        ).lstrip(),
+    )
+
+    ln_pp_group.add_argument(
+        "--lstrip-blocks",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+
+        If this is set to True leading spaces and tabs are stripped from the
+        start of a line to a block in templates.
 
     """
         ).lstrip(),
@@ -541,9 +598,9 @@ def make_parser() -> argparse.ArgumentParser:
 
         Options passed through to templates as `options` on the target language.
 
-        Note that these arguments are passed though without validation, have no effect on the Nunavut
-        library, and may or may not be appropriate based on the target language and generator templates
-        in use.
+        Note that these arguments are passed though without validation, have no effect on the
+        Nunavut library, and may or may not be appropriate based on the target language and
+        generator templates in use.
     """
         ).lstrip(),
     )
@@ -634,21 +691,8 @@ def make_parser() -> argparse.ArgumentParser:
 
         There is a set of built-in configuration for Nunavut that provides default values for known
         languages as documented `in the template guide
-        <https://nunavut.readthedocs.io/en/latest/docs/templates.html#language-options>`_. This argument lets you
-        specify override configuration yaml.
-    """
-        ).lstrip(),
-    )
-
-    ln_opt_group.add_argument(
-        "--list-configuration",
-        "-lc",
-        action="store_true",
-        help=textwrap.dedent(
-            """
-
-        Lists all configuration values resolved for the given arguments.
-
+        <https://nunavut.readthedocs.io/en/latest/docs/templates.html#language-options>`_. This
+        argument lets you specify override configuration yaml.
     """
         ).lstrip(),
     )

@@ -17,7 +17,7 @@ import typing
 
 from pathlib import Path
 
-from nunavut._utilities import DefaultValue
+from nunavut._utilities import DefaultValue, QuaternaryLogic
 
 
 class NunavutArgumentParser(argparse.ArgumentParser):
@@ -34,7 +34,8 @@ class NunavutArgumentParser(argparse.ArgumentParser):
     - lookup_paths:             A list of additional directories to search for DSDL files. This is a combination of
                                 the lookup_dir argument and paths from supported environment variables.
     - language_options:         A dictionary of options to pass to a language context builder.
-    - should_generate_support:  Truth based on the generate_support (trinary) and omit_serialization_support arguments.
+    - should_generate_support:  True if support files should be generated.
+    - should_generate_code:     True if code files should be generated.
     - legacy_mode:              A boolean indicating if the provided arguments use the single root path mode which is
                                 the legacy behavior of Nunavut.
 
@@ -57,47 +58,65 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             file = sys.stdout
         self._print_message(message, file)
 
+    def _from_en_us_to_quinary_logic(self, en_us_word: any) -> QuaternaryLogic:
+        """
+        Convert an English word to a QuaternaryLogic enum value.
+
+        :param en_us_word: The English word to convert.
+        :return: The QuaternaryLogic enum value.
+        :raises ValueError: If the word is not recognized.
+
+        """
+
+        if en_us_word is None:
+            return QuaternaryLogic.FALSE_OR
+
+        lcw = str(en_us_word).lower()
+        if lcw in ("never", "always-false", "false", "no", "0"):
+            return QuaternaryLogic.ALWAYS_FALSE
+        if lcw in (
+            "as-needed",
+            "if-needed",
+            "",
+            "neutral",
+            "none",
+            "false-or",
+            "unless",
+            "false-if-exclusive",
+            "false-xor",
+        ):
+            return QuaternaryLogic.FALSE_OR
+        if lcw in ("only", "true-if-exclusive", "exclusive", "true-xor"):
+            return QuaternaryLogic.TRUE_XOR
+        if lcw in("always", "always-true", "true", "yes", "1", "true-or"):
+            return QuaternaryLogic.ALWAYS_TRUE
+        raise ValueError(f"Unknown value '{en_us_word}'")
+
     def _post_process_args(self, args: argparse.Namespace) -> None:
         """
         Applies rules between different arguments and handles other special cases.
         """
 
-        # TODO: make sure the standard generator arg names line up:
-        # language_key: str,
-        # target_dsdl_files: typing.Iterable[typing.Union[str, Path]],
-        # root_namespace_directories_or_names: typing.Iterable[typing.Union[str, Path]],
-        # out_dir: Path,
-        # omit_serialization_support: bool = True,
-        # is_dryrun: bool = False,
-        # allow_overwrite: bool = True,
-        # lookup_directories: typing.Iterable[typing.Union[str, Path]] = None,
-        # allow_unregulated_fixed_port_id: bool = False,
-        # language_options: typing.Optional[typing.Mapping[str, typing.Any]] = None,
-        # include_experimental_languages: bool = False,
-        # embed_auditing_info: bool = False,
+        # TODO: parse colon syntax into target_dsdl_files and root_namespace_directories_or_names
 
         if args.verbose is None:
             args.verbose = 0
 
-        # Check for logic errors in the arguments.
-        if args.omit_serialization_support and args.generate_support == "always":
-            self.error(
-                textwrap.dedent(
-                    """
-                Logic error: use of --omit-serialization-support and --generate-support=always
-
-                You cannot both omit serialization support and require generation of support code.
-            """
-                ).lstrip()
-            )
-
-        # Add "should_generate_support" determination to the args object.
-        if args.generate_support == "as-needed":
-            args.should_generate_support = (
-                args.omit_serialization_support is None or not args.omit_serialization_support
-            )
+        # Add "should_generate_support" to the arguments.
+        generate_support = self._from_en_us_to_quinary_logic(args.generate_support)
+        del args.generate_support
+        if generate_support is QuaternaryLogic.ALWAYS_FALSE:
+            args.should_generate_support = False
         else:
-            args.should_generate_support = bool(args.generate_support in ("always", "only"))
+            args.should_generate_support = True
+
+        args.should_generate_code = generate_support != QuaternaryLogic.TRUE_XOR
+
+        if not args.should_generate_support and not args.should_generate_code:
+            self.error(
+                "Arguments resolved into a command to do nothing (does not generate code from types nor does the "
+                "command generate support code)."
+            )
 
         # Find all possible path specifications and combine into three collections: root_paths, target_files, and
         # lookup_paths.
@@ -125,7 +144,6 @@ class NunavutArgumentParser(argparse.ArgumentParser):
 
         # Create a dictionary of language options.
         args.language_options = self._create_language_options(args)
-
 
     def _parse_target_paths(self, target_files_or_root_namespace: list[str]) -> typing.Tuple[set[Path], set[Path]]:
         """

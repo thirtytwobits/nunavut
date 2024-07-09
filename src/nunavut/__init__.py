@@ -40,7 +40,7 @@ from .lang import UnsupportedLanguageError
 from .lang._config import LanguageConfig
 from ._exceptions import InternalError
 
-if _sys.version_info[:2] < (3, 7):  # pragma: no cover
+if _sys.version_info[:2] < (3, 8):  # pragma: no cover
     print("A newer version of Python is required", file=_sys.stderr)
     _sys.exit(1)
 

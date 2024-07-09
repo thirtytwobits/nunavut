@@ -99,6 +99,52 @@ class YesNoDefault(enum.Enum):
 
 
 @enum.unique
+class QuaternaryLogic(enum.Enum):
+    """
+    A Quinary logic type for decisions that are partially determined at one point in the program and must be resolved
+    at a later point. This is useful for encapsulating user input that may be ambiguous or incomplete. For example:
+
+    .. invisible-code-block: python
+
+        from nunavut._utilities import QuaternaryLogic
+
+    .. code-block:: python
+
+            def should_we_order_pizza(answer: QuaternaryLogic, is_it_friday: bool, bank_account_balance: float) -> bool:
+                if answer == QuaternaryLogic.ALWAYS_FALSE:
+                    return False
+                if answer == QuaternaryLogic.FALSE_OR:
+                    # We always order pizza on Friday if we don't have a reason not to.
+                    return is_it_friday and bank_account_balance >= 100.00
+                if answer == QuaternaryLogic.TRUE_XOR:
+                    # We only order pizza if we have enough money.
+                    return (bank_account_balance < 100.00)
+                if answer == QuaternaryLogic.ALWAYS_TRUE:
+                    return True
+                raise ValueError(f"Unknown value '{answer}'")
+
+    """
+
+    ALWAYS_FALSE = 0
+    """Always false."""
+
+    FALSE_OR = 1
+    """
+    Requires additional context. Similar to OR in logic where this input is 0 and the other input is 0 or 1. Since
+    this value is pre-determined to be false, it acts the same as would a FALSE_XOR value.
+    """
+
+    TRUE_XOR = 3
+    """
+    True unless there is a reason not to be. Similar to XOR in logic where this input is 1 and the other input is
+    0 or 1.
+    """
+
+    ALWAYS_TRUE = 4
+    """Always true. Equivalent to a TRUE_OR value."""
+
+
+@enum.unique
 class ResourceType(enum.Enum):
     """
     Common Nunavut classifications for Python package resources.

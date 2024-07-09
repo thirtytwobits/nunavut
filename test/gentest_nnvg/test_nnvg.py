@@ -478,27 +478,20 @@ def test_generate_support(
 
     nnvg_args.append((gen_paths.dsdl_dir / pathlib.Path("uavcan")).as_posix())
 
-    if omit_serialization and generate_support == "always":
-        # special case where the combination of arguments is illogical
-        with pytest.raises(subprocess.CalledProcessError):
-            run_nnvg(gen_paths, nnvg_args, raise_called_process_error=True)
-    else:
-        run_nnvg(gen_paths, nnvg_args)
-        for support_output_path in support_output:
-            if generate_support == "always":
-                assert support_output_path.exists()
-            elif generate_support == "never":
-                assert not support_output_path.exists()
-            elif not omit_serialization:
-                assert support_output_path.exists()
-            else:
-                assert not support_output_path.exists()
+    # TODO: a more generalized test is needed as the C language doesn't have any language support files
+    #       to cover cases where serialization is omitted but language support is not.
+    run_nnvg(gen_paths, nnvg_args)
+    for support_output_path in support_output:
+        if generate_support == "never":
+            assert not support_output_path.exists()
+        else:
+            assert support_output_path.exists() != omit_serialization
 
-        for type_output_path in type_output:
-            if generate_support != "only":
-                assert type_output_path.exists()
-            else:
-                assert not type_output_path.exists()
+    for type_output_path in type_output:
+        if generate_support != "only":
+            assert type_output_path.exists()
+        else:
+            assert not type_output_path.exists()
 
 
 def test_issue_73(gen_paths: typing.Any, run_nnvg: typing.Callable) -> None:
