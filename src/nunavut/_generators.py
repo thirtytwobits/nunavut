@@ -247,7 +247,7 @@ def generate_types(
 # pylint: disable=too-many-arguments, too-many-locals
 def generate_all(
     target_language: str,
-    target_dsdl_files: Iterable[Union[str, Path]],
+    target_files: Iterable[Union[str, Path]],
     root_namespace_directories_or_names: Iterable[Union[str, Path]],
     outdir: Path,
     should_generate_support: bool = True,
@@ -256,9 +256,9 @@ def generate_all(
     no_overwrite: bool = False,
     lookup_dir: Optional[Iterable[Union[str, Path]]] = None,
     allow_unregulated_fixed_port_id: bool = False,
-    experimental_languages: bool = False,
-    embed_auditing_info: bool = False,
-    **kwargs: Any
+    language_options: Optional[Mapping[str, Any]] = None,
+    include_experimental_languages: bool = False,
+    embed_auditing_info: bool = False
 ) -> GenerationResult:
     """
     Helper method that uses default settings and built-in templates to generate types for a given
@@ -266,7 +266,7 @@ def generate_all(
 
     :param str target_language: The name of the language to generate source for.
                 See the :doc:`../../docs/templates` for details on available language support.
-    :param target_dsdl_files: A list of paths to dsdl files. This method will generate code for these files and their
+    :param target_files: A list of paths to dsdl files. This method will generate code for these files and their
                 dependant types.
     :param root_namespace_directories_or_names: This can be a set of names of root namespaces or relative paths to
         root namespaces. All ``dsdl_files`` provided must be under one of these roots. For example, given:
@@ -309,37 +309,37 @@ def generate_all(
         Directories to search for dependent types when included within DSDL files.
     :param bool allow_unregulated_fixed_port_id:
         If True then errors will become warning when using fixed port identifiers for unregulated datatypes.
-    :param bool experimental_languages:
+    :param Optional[Mapping[str, Any]] language_options: Opaque arguments passed through to the language objects. The
+        supported arguments and valid values are different depending on the language specified by the `language_key`
+        parameter.
+    :param bool include_experimental_languages:
         If true then experimental languages will also be available.
     :param embed_auditing_info:
         If True then additional information about the inputs and environment used to generate source will be embedded in
         the generated files at the cost of build reproducibility.
-    :param Any language_options:
-        All additional arguments are passed through to the language objects. The supported arguments and valid values
-        are different depending on the language specified by the `target_language` parameter.
 
     :returns GenerationResult: A dataclass containing lists of target files, dependent files, and generated files
         (i.e explicit inputs, discovered inputs, and determined outputs).
     """
     language_context = (
-        LanguageContextBuilder(include_experimental_languages=experimental_languages)
+        LanguageContextBuilder(include_experimental_languages=include_experimental_languages)
         .set_target_language(target_language)
-        .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, kwargs)
+        .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, language_options)
         .create()
     )
 
     if lookup_dir is None:
         lookup_dir = []
 
-    dsdl_files = read_dsdl_files(
-        target_dsdl_files,
+    target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
+        target_files,
         root_namespace_directories_or_names,
         lookup_dir,
         allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
     )
 
     dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
-    for dsdl_file in itertools.chain(dsdl_files[0], dsdl_files[1]):
+    for dsdl_file in itertools.chain(target_dsdl_files, dependent_dsdl_files):
         root_path = dsdl_file.source_file_path_to_root
         dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
 
@@ -361,7 +361,7 @@ def generate_all(
 
     return GenerationResult(
         language_context,
-        [(ct.source_file_path_to_root, ct.source_file_path) for ct in dsdl_files[0]],
-        [(ct.source_file_path_to_root, ct.source_file_path) for ct in dsdl_files[1]],
+        [(ct.source_file_path_to_root, ct.source_file_path) for ct in target_dsdl_files],
+        [(ct.source_file_path_to_root, ct.source_file_path) for ct in dependent_dsdl_files],
         generated_files,
     )

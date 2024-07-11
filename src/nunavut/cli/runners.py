@@ -20,14 +20,7 @@ from nunavut._generators import create_default_generators
 from nunavut._generators import AbstractGenerator as Generator
 from nunavut._generators import generate_all
 from nunavut._namespace import build_namespace_tree
-from nunavut._postprocessors import (
-    ExternalProgramEditInPlace,
-    LimitEmptyLines,
-    PostProcessor,
-    SetFileMode,
-    TrimTrailingWhitespace,
-)
-from nunavut._utilities import YesNoDefault, QuaternaryLogic
+from nunavut._utilities import YesNoDefault
 from nunavut.lang import Language, LanguageContext, LanguageContextBuilder
 
 
@@ -69,7 +62,7 @@ class Runner(abc.ABC):
         target_language_name = self.args.target_language
 
         builder: LanguageContextBuilder = LanguageContextBuilder(
-            include_experimental_languages=self.args.experimental_languages
+            include_experimental_languages=self.args.include_experimental_languages
         )
         builder.set_target_language(target_language_name)
         builder.add_config_files(*additional_config_files)
@@ -79,35 +72,6 @@ class Runner(abc.ABC):
         )
         builder.set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, self.args.language_options)
         return builder
-
-    def create_post_processors(self) -> list[PostProcessor]:
-        """
-        A, possibly empty, list of post processors to run based on provided arguments.
-        """
-
-        def _build_ext_program_postprocessor_args(program: str) -> list[str]:
-            """
-            Build an array of arguments for the program.
-            """
-            subprocess_args = [program]
-            if hasattr(self.args, "pp_run_program_arg") and self.args.pp_run_program_arg is not None:
-                for program_arg in self.args.pp_run_program_arg:
-                    subprocess_args.append(program_arg)
-            return subprocess_args
-
-        post_processors = []
-        if self.args.pp_trim_trailing_whitespace:
-            post_processors.append(TrimTrailingWhitespace())
-        if hasattr(self.args, "pp_max_emptylines") and self.args.pp_max_emptylines is not None:
-            post_processors.append(LimitEmptyLines(self.args.pp_max_emptylines))
-        if hasattr(self.args, "pp_run_program") and self.args.pp_run_program is not None:
-            post_processors.append(
-                ExternalProgramEditInPlace(_build_ext_program_postprocessor_args(self.args.pp_run_program))
-            )
-
-        post_processors.append(SetFileMode(self.args.file_mode))
-
-        return post_processors
 
     def list_configuration(self, lctx: LanguageContext) -> None:
         """
@@ -154,11 +118,14 @@ class LegacyArgparseRunner(Runner):
     argument handling logic in this class. The modern version of this runner delegates as much logic as possible
     to the Nunavut library to ensure consistency between the CLI and any applications that invoke Nunavut directly.
 
+    This object should be removed in a future major release of Nunavut to reduce the complexity of the codebase.
+
     :param argparse.Namespace args: The command line arguments.
     """
 
     def __init__(self, args: argparse.ArgumentParser):
         self._args = args
+        assert self._args.legacy_mode
 
     @property
     def args(self) -> argparse.Namespace:
@@ -170,7 +137,7 @@ class LegacyArgparseRunner(Runner):
         if self._args.list_configuration:
             self.list_configuration(lctx)
 
-        root_path = self._args.root_paths[0]
+        root_path = self._args.target_files_or_root_namespace[0]
         code_generator, support_generator = self._create_generators_for_root(lctx, root_path)
 
         if not self._args.should_generate_support:
@@ -218,7 +185,7 @@ class LegacyArgparseRunner(Runner):
             ),
             "trim_blocks": self._args.trim_blocks,
             "lstrip_blocks": self._args.lstrip_blocks,
-            "post_processors": self.create_post_processors(),
+            "post_processors": self._args.post_processors,
         }
 
         return create_default_generators(root_namespace, **generator_args)
@@ -227,10 +194,20 @@ class LegacyArgparseRunner(Runner):
         self, code_generator: typing.Optional[Generator], support_generator: typing.Optional[Generator]
     ) -> None:
         if code_generator is not None:
-            self.stdout_lister(code_generator.generate_all(is_dryrun=True), str)
+            self.stdout_lister(
+                code_generator.generate_all(
+                    is_dryrun=True, omit_serialization_support=self._args.omit_serialization_support
+                ),
+                str,
+            )
 
         if support_generator is not None:
-            self.stdout_lister(support_generator.generate_all(is_dryrun=True), str)
+            self.stdout_lister(
+                support_generator.generate_all(
+                    is_dryrun=True, omit_serialization_support=self._args.omit_serialization_support
+                ),
+                str,
+            )
 
     def _list_inputs_only(
         self, code_generator: typing.Optional[Generator], support_generator: typing.Optional[Generator]

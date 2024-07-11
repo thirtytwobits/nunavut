@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .parsers import NunavutArgumentParser
 
+
 class _LazyVersionAction(argparse._VersionAction):
     """
     Changes argparse._VersionAction so we only load nunavut.version
@@ -39,7 +40,13 @@ class _LazyVersionAction(argparse._VersionAction):
         parser.exit()
 
 
-def make_parser() -> argparse.ArgumentParser:
+ParserT = typing.TypeVar("ParserT")
+"""
+Type variable for the concrete parser to create.
+"""
+
+
+def _make_parser(parser_type: ParserT) -> ParserT:
     """
     Defines the command-line interface. Provided as a separate factory method to
     support sphinx-argparse documentation.
@@ -64,7 +71,7 @@ def make_parser() -> argparse.ArgumentParser:
     """
     )
 
-    parser = NunavutArgumentParser(
+    parser = parser_type(
         description="Generate code from Cyphal DSDL using pydsdl and jinja2",
         epilog=epilog,
         formatter_class=argparse.RawTextHelpFormatter,
@@ -188,7 +195,6 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-
     # +-----------------------------------------------------------------------+
     # | Extended Generation Options
     # +-----------------------------------------------------------------------+
@@ -233,6 +239,7 @@ def make_parser() -> argparse.ArgumentParser:
     )
 
     extended_group.add_argument(
+        "--include-experimental-languages",
         "--experimental-languages",
         "-Xlang",
         action="store_true",
@@ -409,7 +416,6 @@ def make_parser() -> argparse.ArgumentParser:
         ).lstrip(),
     )
 
-
     # +-----------------------------------------------------------------------+
     # | Operation Options
     # +-----------------------------------------------------------------------+
@@ -472,7 +478,9 @@ def make_parser() -> argparse.ArgumentParser:
         help=textwrap.dedent(
             """
 
-        Lists all configuration values resolved for the given arguments.
+        Lists all configuration values resolved for the given arguments. Unlike --list-inputs
+        and --list-outputs this command does *not* imply --dry-run but can be used in conjunction
+        with it.
 
     """
         ).lstrip(),
@@ -698,3 +706,18 @@ def make_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def make_argparse_parser() -> argparse.ArgumentParser:
+    """
+    Defines the command-line interface using generic argparse.ArgumentParser.
+    This should be used for documentation and tab-completion tools.
+    """
+    return _make_parser(argparse.ArgumentParser)
+
+
+def make_nunavut_parser() -> NunavutArgumentParser:
+    """
+    Defines the command-line interface using the full NunavutArgumentParser.
+    """
+    return _make_parser(NunavutArgumentParser)

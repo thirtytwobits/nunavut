@@ -12,11 +12,16 @@ import itertools
 import os
 import re
 import sys
-import textwrap
 import typing
 
 from pathlib import Path
-
+from nunavut._postprocessors import (
+    ExternalProgramEditInPlace,
+    LimitEmptyLines,
+    PostProcessor,
+    SetFileMode,
+    TrimTrailingWhitespace,
+)
 from nunavut._utilities import DefaultValue, QuaternaryLogic
 
 
@@ -27,18 +32,19 @@ class NunavutArgumentParser(argparse.ArgumentParser):
 
     Adds the following fields to the parsed arguments:
 
-    - root_paths:               A non-empty list of root paths (directories) to search for DSDL files combined from
-                                target file colon syntax and path-to-root arguments.
-    - target_files:             When not in legacy mode, a non-empty list of target files to process with colon syntax
-                                resolved. When in legacy mode, this is not provided.
-    - lookup_paths:             A list of additional directories to search for DSDL files. This is a combination of
-                                the lookup_dir argument and paths from supported environment variables.
-    - language_options:         A dictionary of options to pass to a language context builder.
-    - should_generate_support:  True if support files should be generated.
-    - should_generate_code:     True if code files should be generated.
-    - legacy_mode:              A boolean indicating if the provided arguments use the single root path mode which is
-                                the legacy behavior of Nunavut.
-
+    - **root_namespace_directories_or_names**:
+                                    A non-empty list of root paths (directories) to search for DSDL files combined from
+                                    target file colon syntax and path-to-root arguments.
+    - **target_files**:             When not in legacy mode, a non-empty list of target files to process with colon
+                                    syntax resolved. When in legacy mode, this is not provided.
+    - **lookup_paths**:             A list of additional directories to search for DSDL files. This is a combination of
+                                    the lookup_dir argument and paths from supported environment variables.
+    - **language_options**:         A dictionary of options to pass to a language context builder.
+    - **should_generate_support**:  True if support files should be generated.
+    - **should_generate_code**:     True if code files should be generated.
+    - **legacy_mode**:              A boolean indicating if the provided arguments use the single root path mode which
+                                    is the legacy behavior of Nunavut.
+    - **post_processors**:          A list of post processors to run on generated files.
     """
 
     # --[ OVERRIDE ]--------------------------------------------------------------------------------------------------
@@ -58,59 +64,29 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             file = sys.stdout
         self._print_message(message, file)
 
-    def _from_en_us_to_quinary_logic(self, en_us_word: any) -> QuaternaryLogic:
-        """
-        Convert an English word to a QuaternaryLogic enum value.
-
-        :param en_us_word: The English word to convert.
-        :return: The QuaternaryLogic enum value.
-        :raises ValueError: If the word is not recognized.
-
-        """
-
-        if en_us_word is None:
-            return QuaternaryLogic.FALSE_OR
-
-        lcw = str(en_us_word).lower()
-        if lcw in ("never", "always-false", "false", "no", "0"):
-            return QuaternaryLogic.ALWAYS_FALSE
-        if lcw in (
-            "as-needed",
-            "if-needed",
-            "",
-            "neutral",
-            "none",
-            "false-or",
-            "unless",
-            "false-if-exclusive",
-            "false-xor",
-        ):
-            return QuaternaryLogic.FALSE_OR
-        if lcw in ("only", "true-if-exclusive", "exclusive", "true-xor"):
-            return QuaternaryLogic.TRUE_XOR
-        if lcw in("always", "always-true", "true", "yes", "1", "true-or"):
-            return QuaternaryLogic.ALWAYS_TRUE
-        raise ValueError(f"Unknown value '{en_us_word}'")
-
     def _post_process_args(self, args: argparse.Namespace) -> None:
         """
         Applies rules between different arguments and handles other special cases.
         """
 
-        # TODO: parse colon syntax into target_dsdl_files and root_namespace_directories_or_names
-
         if args.verbose is None:
             args.verbose = 0
 
+        if args.list_outputs:
+            args.dry_run = True
+
+        if args.list_inputs:
+            args.dry_run = True
+
         # Add "should_generate_support" to the arguments.
-        generate_support = self._from_en_us_to_quinary_logic(args.generate_support)
+        generate_support = QuaternaryLogic.from_en_us(args.generate_support)
         del args.generate_support
         if generate_support is QuaternaryLogic.ALWAYS_FALSE:
             args.should_generate_support = False
         else:
             args.should_generate_support = True
 
-        args.should_generate_code = generate_support != QuaternaryLogic.TRUE_XOR
+        args.should_generate_code = generate_support != QuaternaryLogic.TRUE_UNLESS
 
         if not args.should_generate_support and not args.should_generate_code:
             self.error(
@@ -118,12 +94,16 @@ class NunavutArgumentParser(argparse.ArgumentParser):
                 "command generate support code)."
             )
 
-        # Find all possible path specifications and combine into three collections: root_paths, target_files, and
-        # lookup_paths.
-        root_paths, target_files = self._parse_target_paths(args.target_files_or_root_namespace)
+        # Find all possible path specifications and combine into three collections: root_namespace_directories_or_names,
+        # target_files, and lookup_paths.
+        root_namespace_directories_or_names, target_files = self._parse_target_paths(
+            args.target_files_or_root_namespace
+        )
 
-        args.root_paths = list(root_paths)
-        args.legacy_mode = len(args.root_paths) == 1 and args.root_paths[0].is_dir()
+        args.root_namespace_directories_or_names = list(root_namespace_directories_or_names)
+        args.legacy_mode = (
+            len(args.root_namespace_directories_or_names) == 1 and args.root_namespace_directories_or_names[0].is_dir()
+        )
 
         lookup_paths = set(args.lookup_dir) if args.lookup_dir is not None else set()
         args.lookup_paths = list(lookup_paths.union(self._lookup_paths_from_environment(args)))
@@ -131,7 +111,7 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         if args.path_to_root is not None and args.legacy_mode:
             self.error("Cannot use --path-to-root when using a single root path (legacy syntax).")
 
-        args.root_paths += args.path_to_root if args.path_to_root is not None else []
+        args.root_namespace_directories_or_names += args.path_to_root if args.path_to_root is not None else []
 
         if not args.legacy_mode:
             if len(target_files) == 0:
@@ -139,11 +119,14 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             else:
                 args.target_files = list(target_files)
 
-        if len(args.root_paths) == 0:
+        if len(args.root_namespace_directories_or_names) == 0:
             self.error("No root paths provided.")
 
         # Create a dictionary of language options.
         args.language_options = self._create_language_options(args)
+
+        # Create a list of post processors.
+        args.post_processors = self._create_post_processors(args)
 
     def _parse_target_paths(self, target_files_or_root_namespace: list[str]) -> typing.Tuple[set[Path], set[Path]]:
         """
@@ -232,3 +215,32 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             language_options["std"] = args.language_standard
 
         return language_options
+
+    def _create_post_processors(self, args: argparse.Namespace) -> list[PostProcessor]:
+        """
+        A, possibly empty, list of post processors to run based on provided arguments.
+        """
+
+        def _build_ext_program_postprocessor_args(program: str) -> list[str]:
+            """
+            Build an array of arguments for the program.
+            """
+            subprocess_args = [program]
+            if hasattr(args, "pp_run_program_arg") and args.pp_run_program_arg is not None:
+                for program_arg in args.pp_run_program_arg:
+                    subprocess_args.append(program_arg)
+            return subprocess_args
+
+        post_processors = []
+        if args.pp_trim_trailing_whitespace:
+            post_processors.append(TrimTrailingWhitespace())
+        if hasattr(args, "pp_max_emptylines") and args.pp_max_emptylines is not None:
+            post_processors.append(LimitEmptyLines(args.pp_max_emptylines))
+        if hasattr(args, "pp_run_program") and args.pp_run_program is not None:
+            post_processors.append(
+                ExternalProgramEditInPlace(_build_ext_program_postprocessor_args(args.pp_run_program))
+            )
+
+        post_processors.append(SetFileMode(args.file_mode))
+
+        return post_processors

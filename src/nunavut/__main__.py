@@ -12,7 +12,7 @@ import sys
 
 from pathlib import Path
 
-from .cli import make_parser
+from .cli import make_nunavut_parser
 
 
 # --[ MAIN ]-----------------------------------------------------------------------------------------------------------
@@ -24,7 +24,7 @@ def main() -> int:
     #
     # Parse the command-line arguments.
     #
-    parser = make_parser()
+    parser = make_nunavut_parser()
 
     try:
         import argcomplete  # pylint: disable=import-outside-toplevel

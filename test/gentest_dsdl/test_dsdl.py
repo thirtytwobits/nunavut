@@ -44,6 +44,7 @@ def test_realgen(
         targets,
         root_namespace_dir,
         gen_paths.out_dir,
+        should_generate_support=generate_support,
         omit_serialization_support=not generate_support,
         language_options=language_options,
         include_experimental_languages=True,

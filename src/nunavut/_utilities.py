@@ -101,48 +101,111 @@ class YesNoDefault(enum.Enum):
 @enum.unique
 class QuaternaryLogic(enum.Enum):
     """
-    A Quinary logic type for decisions that are partially determined at one point in the program and must be resolved
-    at a later point. This is useful for encapsulating user input that may be ambiguous or incomplete. For example:
+    A quaternary logic value.
 
     .. invisible-code-block: python
 
         from nunavut._utilities import QuaternaryLogic
+        from pytest import raises
+
+        assert QuaternaryLogic.from_en_us(str(False)) == QuaternaryLogic.ALWAYS_FALSE
+        assert QuaternaryLogic.from_en_us(int(False)) == QuaternaryLogic.ALWAYS_FALSE
+        assert QuaternaryLogic.from_en_us(None) == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us("") == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us("default") == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us(str(None)) == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us(str(True)) == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us(int(True)) == QuaternaryLogic.TRUE_IF
+
+        assert QuaternaryLogic.from_en_us("always_false") == QuaternaryLogic.ALWAYS_FALSE
+        assert QuaternaryLogic.from_en_us("always-false") == QuaternaryLogic.ALWAYS_FALSE
+        assert QuaternaryLogic.from_en_us("never") == QuaternaryLogic.ALWAYS_FALSE
+        assert QuaternaryLogic.from_en_us("No") == QuaternaryLogic.ALWAYS_FALSE
+
+        assert QuaternaryLogic.from_en_us("true_if") == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us("true-if") == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us("as-needed") == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us("if-needed") == QuaternaryLogic.TRUE_IF
+        assert QuaternaryLogic.from_en_us("yes") == QuaternaryLogic.TRUE_IF
+
+        assert QuaternaryLogic.from_en_us("true_unless") == QuaternaryLogic.TRUE_UNLESS
+        assert QuaternaryLogic.from_en_us("true-unless") == QuaternaryLogic.TRUE_UNLESS
+        assert QuaternaryLogic.from_en_us("only") == QuaternaryLogic.TRUE_UNLESS
+
+        assert QuaternaryLogic.from_en_us("always_true") == QuaternaryLogic.ALWAYS_TRUE
+        assert QuaternaryLogic.from_en_us("always-true") == QuaternaryLogic.ALWAYS_TRUE
+        assert QuaternaryLogic.from_en_us("always") == QuaternaryLogic.ALWAYS_TRUE
+
+        with raises(ValueError):
+            QuaternaryLogic.from_en_us("not_a_value")
+
+    Example usage:
 
     .. code-block:: python
 
-            def should_we_order_pizza(answer: QuaternaryLogic, is_it_friday: bool, bank_account_balance: float) -> bool:
-                if answer == QuaternaryLogic.ALWAYS_FALSE:
-                    return False
-                if answer == QuaternaryLogic.FALSE_OR:
-                    # We always order pizza on Friday if we don't have a reason not to.
-                    return is_it_friday and bank_account_balance >= 100.00
-                if answer == QuaternaryLogic.TRUE_XOR:
-                    # We only order pizza if we have enough money.
-                    return (bank_account_balance < 100.00)
-                if answer == QuaternaryLogic.ALWAYS_TRUE:
-                    return True
-                raise ValueError(f"Unknown value '{answer}'")
+        def should_we_order_pizza(answer: QuaternaryLogic, is_today_friday: bool) -> bool:
+            if answer == QuaternaryLogic.TRUE_IF:
+                # order pizza on Friday!
+                return is_today_friday
+            elif answer == QuaternaryLogic.TRUE_UNLESS:
+                # only order pizza if it's not Friday
+                return not is_today_friday
+            elif answer == QuaternaryLogic.ALWAYS_TRUE:
+                # always order pizza
+                return True
+            elif answer == QuaternaryLogic.ALWAYS_FALSE:
+                # never order pizza
+                return False
+            else:
+                raise ValueError("Unknown value")
 
     """
+
+    @classmethod
+    def from_en_us(cls, en_us_word: any) -> "QuaternaryLogic":
+        """
+        Convert an English words for "always false, always true, true if, and true unless" to a quaternary logic
+        value.
+
+        :param en_us_word: The English word to convert.
+        :return: The input as a quaternary logic value.
+        :raises ValueError: If the word is not recognized.
+
+        """
+
+        if en_us_word is None:
+            return cls.TRUE_IF
+
+        lcw = str(en_us_word).lower()
+        if lcw in ("always_false", "always-false", "never", "no", "false", "0"):
+            return cls.ALWAYS_FALSE
+        if lcw in ("true_if", "true-if", "as-needed", "if-needed", "yes", "", "default", "None", "true", "1"):
+            return cls.TRUE_IF
+        if lcw in ("true_unless", "true-unless", "only"):
+            return cls.TRUE_UNLESS
+        if lcw in ("always_true", "always-true", "always"):
+            return "ALWAYS_TRUE"
+        raise ValueError(f"Unknown value '{en_us_word}'")
 
     ALWAYS_FALSE = 0
-    """Always false."""
-
-    FALSE_OR = 1
     """
-    Requires additional context. Similar to OR in logic where this input is 0 and the other input is 0 or 1. Since
-    this value is pre-determined to be false, it acts the same as would a FALSE_XOR value.
+    Always false.
     """
 
-    TRUE_XOR = 3
+    ALWAYS_TRUE = 1
     """
-    True unless there is a reason not to be. Similar to XOR in logic where this input is 1 and the other input is
-    0 or 1.
+    Always true.
     """
 
-    ALWAYS_TRUE = 4
-    """Always true. Equivalent to a TRUE_OR value."""
+    TRUE_IF = 2
+    """
+    True if a condition is met. (1 AND condition)
+    """
 
+    TRUE_UNLESS = 3
+    """
+    True unless a condition is met. (1 XOR condition)
+    """
 
 @enum.unique
 class ResourceType(enum.Enum):

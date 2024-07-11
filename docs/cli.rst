@@ -8,5 +8,5 @@ Usage
 
 .. argparse::
    :filename: src/nunavut/cli/__init__.py
-   :func: make_parser
+   :func: make_argparse_parser
    :prog: nnvg
