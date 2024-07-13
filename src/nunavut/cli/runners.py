@@ -9,18 +9,16 @@
 
 import abc
 import argparse
+import logging
 import sys
-import typing
-
 from pathlib import Path
+from typing import Any, Callable, Iterable, Optional, Tuple
 
 from pydsdl import read_namespace as read_dsdl_namespace
 
-from nunavut._generators import create_default_generators
 from nunavut._generators import AbstractGenerator as Generator
 from nunavut._generators import generate_all
 from nunavut._namespace import build_namespace_tree
-from nunavut._utilities import YesNoDefault
 from nunavut.lang import Language, LanguageContext, LanguageContextBuilder
 
 
@@ -88,16 +86,16 @@ class Runner(abc.ABC):
 
     def stdout_lister(
         self,
-        things_to_list: typing.Iterable[typing.Any],
-        to_string: typing.Callable[[typing.Any], str],
+        things_to_list: Iterable[Any],
+        to_string: Callable[[Any], str],
         sep: str = ";",
         end: str = ";",
     ) -> None:
         """
         Write a list of things to stdout.
 
-        :param typing.Iterable[typing.Any] things_to_list: The things to list.
-        :param typing.Callable[[typing.Any], str] to_string: A function that converts a thing to a string.
+        :param Iterable[Any] things_to_list: The things to list.
+        :param Callable[[Any], str] to_string: A function that converts a thing to a string.
         :param str sep: The separator to use between things.
         :param str end: The character to print at the end.
         """
@@ -118,6 +116,14 @@ class LegacyArgparseRunner(Runner):
     argument handling logic in this class. The modern version of this runner delegates as much logic as possible
     to the Nunavut library to ensure consistency between the CLI and any applications that invoke Nunavut directly.
 
+    ```
+    ██████  ███████ ██████  ██████  ███████  ██████  █████  ████████ ███████ ██████
+    ██   ██ ██      ██   ██ ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
+    ██   ██ █████   ██████  ██████  █████   ██      ███████    ██    █████   ██   ██
+    ██   ██ ██      ██      ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
+    ██████  ███████ ██      ██   ██ ███████  ██████ ██   ██    ██    ███████ ██████
+    ```
+
     This object should be removed in a future major release of Nunavut to reduce the complexity of the codebase.
 
     :param argparse.Namespace args: The command line arguments.
@@ -137,7 +143,7 @@ class LegacyArgparseRunner(Runner):
         if self._args.list_configuration:
             self.list_configuration(lctx)
 
-        root_path = self._args.target_files_or_root_namespace[0]
+        root_path = self._args.target_files[0]
         code_generator, support_generator = self._create_generators_for_root(lctx, root_path)
 
         if not self._args.should_generate_support:
@@ -160,11 +166,11 @@ class LegacyArgparseRunner(Runner):
 
     def _create_generators_for_root(
         self, lctx: LanguageContext, root_namespace_path: Path
-    ) -> typing.Tuple[Generator, Generator]:
+    ) -> Tuple[Generator, Generator]:
         if self._args.should_generate_code and not self._args.list_configuration:
             type_map = read_dsdl_namespace(
                 root_namespace_path,
-                self._args.lookup_paths,
+                self._args.root_namespace_directories_or_names,
                 allow_unregulated_fixed_port_id=self._args.allow_unregulated_fixed_port_id,
             )
         else:
@@ -176,23 +182,20 @@ class LegacyArgparseRunner(Runner):
         # nunavut : create generators
         #
         generator_args = {
-            "generate_namespace_types": (
-                YesNoDefault.YES if self._args.generate_namespace_types else YesNoDefault.DEFAULT
-            ),
-            "templates_dir": (Path(self._args.templates) if self._args.templates is not None else None),
-            "support_templates_dir": (
-                Path(self._args.support_templates) if self._args.support_templates is not None else None
-            ),
+            "generate_namespace_types": self._args.generate_namespace_types,
+            "templates_dir": self._args.templates_dir,
+            "support_templates_dir": self._args.support_templates_dir,
             "trim_blocks": self._args.trim_blocks,
             "lstrip_blocks": self._args.lstrip_blocks,
             "post_processors": self._args.post_processors,
         }
 
-        return create_default_generators(root_namespace, **generator_args)
+        from nunavut.jinja import (  # pylint: disable=import-outside-toplevel
+            DSDLCodeGenerator, SupportGenerator)
 
-    def _list_outputs_only(
-        self, code_generator: typing.Optional[Generator], support_generator: typing.Optional[Generator]
-    ) -> None:
+        return (DSDLCodeGenerator(root_namespace, **generator_args), SupportGenerator(root_namespace, **generator_args))
+
+    def _list_outputs_only(self, code_generator: Optional[Generator], support_generator: Optional[Generator]) -> None:
         if code_generator is not None:
             self.stdout_lister(
                 code_generator.generate_all(
@@ -209,9 +212,7 @@ class LegacyArgparseRunner(Runner):
                 str,
             )
 
-    def _list_inputs_only(
-        self, code_generator: typing.Optional[Generator], support_generator: typing.Optional[Generator]
-    ) -> None:
+    def _list_inputs_only(self, code_generator: Optional[Generator], support_generator: Optional[Generator]) -> None:
 
         if support_generator is not None:
             self.stdout_lister(
@@ -236,9 +237,7 @@ class LegacyArgparseRunner(Runner):
                     lambda p: str(p.source_file_path.as_posix()),
                 )
 
-    def _generate(
-        self, code_generator: typing.Optional[Generator], support_generator: typing.Optional[Generator]
-    ) -> None:
+    def _generate(self, code_generator: Optional[Generator], support_generator: Optional[Generator]) -> None:
         if support_generator is not None:
             support_generator.generate_all(
                 is_dryrun=self._args.dry_run,
@@ -295,3 +294,38 @@ def new_runner(args: argparse.Namespace) -> Runner:
     if hasattr(args, "legacy_mode") and args.legacy_mode:
         return LegacyArgparseRunner(args)
     return StandardArgparseRunner(args)
+
+
+# --[ MAIN ]-----------------------------------------------------------------------------------------------------------
+def main(command_line_args: Optional[Any] = None) -> int:
+    """
+    Main entry point for command-line scripts.
+    """
+
+    from . import \
+        make_nunavut_parser  # pylint: disable=import-outside-toplevel
+
+    #
+    # Parse the command-line arguments.
+    #
+    parser = make_nunavut_parser()
+
+    try:
+        import argcomplete  # pylint: disable=import-outside-toplevel
+
+        argcomplete.autocomplete(parser)
+    except ImportError:
+        logging.debug("argcomplete not installed, skipping autocomplete")
+
+    args = parser.parse_args(args=command_line_args)
+
+    #
+    # Setup Python logging.
+    #
+    fmt = "%(message)s"
+    level = {0: logging.WARNING, 1: logging.INFO, 2: logging.DEBUG}.get(args.verbose or 0, logging.DEBUG)
+    logging.basicConfig(stream=sys.stderr, level=level, format=fmt)
+
+    logging.info("Running %s using sys.prefix: %s", Path(__file__).name, sys.prefix)
+
+    return new_runner(args).run()

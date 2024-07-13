@@ -12,9 +12,9 @@ import itertools
 import os
 import re
 import sys
-import typing
-
 from pathlib import Path
+from typing import Any, Optional, Tuple
+
 from nunavut._postprocessors import (
     ExternalProgramEditInPlace,
     LimitEmptyLines,
@@ -22,7 +22,7 @@ from nunavut._postprocessors import (
     SetFileMode,
     TrimTrailingWhitespace,
 )
-from nunavut._utilities import DefaultValue, QuaternaryLogic
+from nunavut._utilities import DefaultValue, QuaternaryLogic, YesNoDefault
 
 
 class NunavutArgumentParser(argparse.ArgumentParser):
@@ -30,22 +30,76 @@ class NunavutArgumentParser(argparse.ArgumentParser):
     Specialization of argparse.ArgumentParser to encapsulate inter-argument rules, aggregate path arguments, and
     combine language options.
 
-    Adds the following fields to the parsed arguments:
+    Arguments Added
+    ---------------
 
-    - **root_namespace_directories_or_names**:
-                                    A non-empty list of root paths (directories) to search for DSDL files combined from
-                                    target file colon syntax and path-to-root arguments.
-    - **target_files**:             When not in legacy mode, a non-empty list of target files to process with colon
-                                    syntax resolved. When in legacy mode, this is not provided.
-    - **lookup_paths**:             A list of additional directories to search for DSDL files. This is a combination of
-                                    the lookup_dir argument and paths from supported environment variables.
-    - **language_options**:         A dictionary of options to pass to a language context builder.
-    - **should_generate_support**:  True if support files should be generated.
-    - **should_generate_code**:     True if code files should be generated.
-    - **legacy_mode**:              A boolean indicating if the provided arguments use the single root path mode which
-                                    is the legacy behavior of Nunavut.
-    - **post_processors**:          A list of post processors to run on generated files.
+    - **target_files**
+        When not in legacy mode, a non-empty list of target files to process with colon syntax
+        resolved. When in legacy mode, this is a single path to the target namespace.
+
+    - **root_namespace_directories_or_names**
+        A list of additional directories to search for DSDL files. This is a combination of the
+        lookup_dir, results after parsing target file colon syntax, and paths from supported
+        environment variables.
+
+    - **language_options**
+        A dictionary of options to pass to a language context builder.
+
+    - **should_generate_support**
+        True if support files should be generated.
+
+    - **should_generate_code**
+        True if code files should be generated.
+
+    - **legacy_mode**
+        A boolean indicating if the provided arguments use the single root path mode which is the
+        legacy behavior of Nunavut.
+
+    - **post_processors**
+        A list of post processors to run on generated files.
+
+    Arguments Removed
+    -----------------
+
+    - **generate_support**
+        The original argument is replaced with should_generate_support and  should_generate_code.
+
+    - **target_files_or_root_namespace**
+        The original argument is replaced with target_files and root_namespace_directories_or_names.
+
+    - **lookup_dir**
+        The original argument is replaced with root_namespace_directories_or_names.
+
+    - **pp_trim_trailing_whitespace**
+        The original arguments are replaced with post_processors.
+
+    - **pp_max_emptylines**
+        The original arguments are replaced with post_processors.
+
+    - **pp_run_program**
+        The original arguments are replaced with post_processors.
+
+    - **pp_run_program_arg**
+        The original arguments are replaced with post_processors.
+
+    Arguments Modified
+    ------------------
+
+    - **verbose**
+        If not provided, defaults to 0.
+
+    - **list_outputs**
+        If provided, sets dry_run to True.
+
+    - **list_inputs**
+        If provided, sets dry_run to True.
+
+    - **generate_namespace_types**
+        Converts the argument to a YesNoDefault enum.
+
     """
+
+    DSDL_FILE_SUFFIXES = (".uavcan", ".dsdl")
 
     # --[ OVERRIDE ]--------------------------------------------------------------------------------------------------
     def parse_known_args(self, args=None, namespace=None):  # type: ignore
@@ -94,33 +148,36 @@ class NunavutArgumentParser(argparse.ArgumentParser):
                 "command generate support code)."
             )
 
-        # Find all possible path specifications and combine into three collections: root_namespace_directories_or_names,
-        # target_files, and lookup_paths.
+        # Find all possible path specifications and combine into two collections: root_namespace_directories_or_names
+        # and target_files.
         root_namespace_directories_or_names, target_files = self._parse_target_paths(
             args.target_files_or_root_namespace
         )
 
-        args.root_namespace_directories_or_names = list(root_namespace_directories_or_names)
-        args.legacy_mode = (
-            len(args.root_namespace_directories_or_names) == 1 and args.root_namespace_directories_or_names[0].is_dir()
-        )
+        # TARGETS
+        if (
+            len(args.target_files_or_root_namespace) == 1
+            and len(target_files) == 0
+            and len(root_namespace_directories_or_names) == 1
+        ):
+            args.legacy_mode = True
+            target_files = target_files.union(root_namespace_directories_or_names)
+            root_namespace_directories_or_names = ()
 
+        del args.target_files_or_root_namespace
+
+        args.target_files = list(target_files)
+
+        if len(target_files) == 0:
+            self.error("No target files provided.")
+
+        # ROOT PATHS
         lookup_paths = set(args.lookup_dir) if args.lookup_dir is not None else set()
-        args.lookup_paths = list(lookup_paths.union(self._lookup_paths_from_environment(args)))
+        del args.lookup_dir
 
-        if args.path_to_root is not None and args.legacy_mode:
-            self.error("Cannot use --path-to-root when using a single root path (legacy syntax).")
-
-        args.root_namespace_directories_or_names += args.path_to_root if args.path_to_root is not None else []
-
-        if not args.legacy_mode:
-            if len(target_files) == 0:
-                self.error("No target files provided.")
-            else:
-                args.target_files = list(target_files)
-
-        if len(args.root_namespace_directories_or_names) == 0:
-            self.error("No root paths provided.")
+        args.root_namespace_directories_or_names = list(
+            lookup_paths.union(self._lookup_paths_from_environment(args), root_namespace_directories_or_names)
+        )
 
         # Create a dictionary of language options.
         args.language_options = self._create_language_options(args)
@@ -128,23 +185,87 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         # Create a list of post processors.
         args.post_processors = self._create_post_processors(args)
 
-    def _parse_target_paths(self, target_files_or_root_namespace: list[str]) -> typing.Tuple[set[Path], set[Path]]:
+        # Generator arguments
+        args.generate_namespace_types = YesNoDefault.YES if args.generate_namespace_types else YesNoDefault.DEFAULT
+
+    def _parse_target_paths(self, target_files_or_root_namespace: Optional[list[str]]) -> Tuple[set[Path], set[Path]]:
         """
         Parse the target paths from the command line arguments.
 
         :return: A list of root paths (folders) and a list of target paths (files).
+
+        .. invisible-code-block: python
+
+            from nunavut.cli.parsers import NunavutArgumentParser
+            from pytest import raises
+
+            parser = NunavutArgumentParser()
+            # Happy path
+            root_paths, target_files = parser._parse_target_paths(
+                [
+                    "/one/to/root",
+                    "/two/to/file.dsdl",
+                    "three/path:four/to/file.dsdl",
+                    "/five/path:six/to/file.dsdl",
+                    "seven/path\\:/eight/to/file.dsdl",
+                    "/five/path/:six/to/file.dsdl",
+                ]
+            )
+            print(root_paths, target_files)
+            assert len(root_paths) == 3
+            assert len(target_files) == 4
+
+            assert Path("/one/to/root") in root_paths
+            assert Path("three/path") in root_paths
+            assert Path("/five/path") in root_paths
+
+            assert Path("/two/to/file.dsdl") in target_files
+            assert Path("four/to/file.dsdl") in target_files
+            assert Path("six/to/file.dsdl") in target_files
+            assert Path("seven/path\\:/eight/to/file.dsdl") in target_files
+
+            # Happy path: default root path
+            default_root_paths, default_target_files = parser._parse_target_paths([""])
+            assert len(default_root_paths) == 1
+            assert len(default_target_files) == 0
+            assert default_root_paths.pop() == Path(".")
+
+            # Happy path: single target file
+            single_target_file_root_paths, single_target_file_target_files = parser._parse_target_paths(
+                ["/one/to/file.dsdl"]
+            )
+            assert len(single_target_file_root_paths) == 0
+            assert len(single_target_file_target_files) == 1
+            assert single_target_file_target_files.pop() == Path("/one/to/file.dsdl")
+
+            # errors: no inputs
+            with raises(SystemExit):
+                parser._parse_target_paths([])
+
+            # errors: no inputs
+            with raises(SystemExit):
+                parser._parse_target_paths(None)
+
+            # errors: multiple colons
+            with raises(SystemExit):
+                parser._parse_target_paths(["one:two:three"])
+
+            # errors: leading slash
+            with raises(SystemExit):
+                parser._parse_target_paths(["path/to:/root/to/file.dsdl"])
+
         """
 
-        def _parse_lookup_dir(lookup_dir: str) -> typing.Tuple[typing.Optional[Path], typing.Optional[Path]]:
+        def _parse_lookup_dir(lookup_dir: str) -> Tuple[Optional[Path], Optional[Path]]:
             split_path = re.split(r"(?<!\\):", lookup_dir)
             if len(split_path) > 2:
-                self.error(f"Invalid lookup path: {lookup_dir}")
+                self.error(f"Invalid lookup path (too many colons) > {lookup_dir}")
             if len(split_path) == 2:
                 return Path(split_path[0]), Path(split_path[1])
-            elif (first_path := Path(split_path[0])).is_dir():
-                return first_path, None
-            else:
+            elif (first_path := Path(split_path[0])).suffix in self.DSDL_FILE_SUFFIXES:
                 return None, first_path
+            else:
+                return first_path, None
 
         if target_files_or_root_namespace is None:
             self.error("No target paths provided.")
@@ -156,6 +277,10 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             if root_dir is not None:
                 root_paths.add(root_dir)
             if target_file_maybe is not None:
+                if root_dir is not None and target_file_maybe.is_absolute():
+                    self.exit(
+                        f"Target file path cannot be absolute when using colon syntax > {root_dir}:{target_file_maybe}"
+                    )
                 target_files.add(target_file_maybe)
 
         if len(root_paths) == 0 and len(target_files) == 0:
@@ -181,9 +306,11 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             self._post_process_log(args, f"Extra includes from DSDL_INCLUDE_PATH: {dsdl_include_path}")
 
         cyphal_root_paths = _extra_includes_from_env("CYPHAL_PATH")
-        cyphal_paths = list(
-            map(lambda cyphal_path: [c for c in cyphal_path.glob("*") if c.is_dir()], cyphal_root_paths)
-        )
+        cyphal_paths = [
+            c
+            for c in itertools.chain.from_iterable(map(lambda cyphal_path: cyphal_path.glob("*"), cyphal_root_paths))
+            if c.is_dir()
+        ]
 
         if len(cyphal_paths) > 0:
             self._post_process_log(args, f"Extra includes from CYPHAL_PATH: {cyphal_paths}")
@@ -192,7 +319,7 @@ class NunavutArgumentParser(argparse.ArgumentParser):
 
         return set(extra_includes)
 
-    def _create_language_options(self, args: argparse.Namespace) -> dict[str, typing.Any]:
+    def _create_language_options(self, args: argparse.Namespace) -> dict[str, Any]:
         """
         Group all language options into a dictionary.
         """
@@ -234,12 +361,16 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         post_processors = []
         if args.pp_trim_trailing_whitespace:
             post_processors.append(TrimTrailingWhitespace())
+            del args.pp_trim_trailing_whitespace
         if hasattr(args, "pp_max_emptylines") and args.pp_max_emptylines is not None:
             post_processors.append(LimitEmptyLines(args.pp_max_emptylines))
+            del args.pp_max_emptylines
         if hasattr(args, "pp_run_program") and args.pp_run_program is not None:
             post_processors.append(
                 ExternalProgramEditInPlace(_build_ext_program_postprocessor_args(args.pp_run_program))
             )
+            del args.pp_run_program
+            del args.pp_run_program_arg
 
         post_processors.append(SetFileMode(args.file_mode))
 

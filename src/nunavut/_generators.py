@@ -11,14 +11,13 @@ pydsdl AST into source code.
 
 import abc
 import itertools
-from typing import Any, Iterable, Mapping, Optional, Union
-
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Iterable, Mapping, Optional, Type, Union
 
-from pydsdl import read_namespace as read_dsdl_namespace
-from pydsdl import read_files as read_dsdl_files
 from pydsdl import CompositeType
+from pydsdl import read_files as read_dsdl_files
+from pydsdl import read_namespace as read_dsdl_namespace
 
 from nunavut._namespace import Namespace, build_namespace_tree
 from nunavut._utilities import YesNoDefault
@@ -134,20 +133,6 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         raise NotImplementedError()
 
 
-def create_default_generators(namespace: Namespace, **kwargs: Any) -> tuple["AbstractGenerator", "AbstractGenerator"]:
-    """
-    Create the two generators used by Nunavut; a code-generator and a support-library generator.
-
-    :param nunavut.Namespace namespace: The namespace to generate code within.
-    :param kwargs: A list of arguments that are forwarded to the generator constructors.
-    :return: Tuple with the first item being the code-generator and the second the support-library
-        generator.
-    """
-    from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
-
-    return (DSDLCodeGenerator(namespace, **kwargs), SupportGenerator(namespace, **kwargs))
-
-
 # +---------------------------------------------------------------------------+
 # | GENERATION HELPERS
 # +---------------------------------------------------------------------------+
@@ -228,7 +213,11 @@ def generate_types(
 
     namespace = build_namespace_tree(type_map, str(root_namespace_dir), str(out_dir), language_context)
 
-    generator, support_generator = create_default_generators(namespace)
+    from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
+
+    generator = DSDLCodeGenerator(namespace)
+    support_generator = SupportGenerator(namespace)
+
     generated_files = list(
         support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
     )
@@ -254,11 +243,13 @@ def generate_all(
     omit_serialization_support: bool = False,
     dry_run: bool = False,
     no_overwrite: bool = False,
-    lookup_dir: Optional[Iterable[Union[str, Path]]] = None,
     allow_unregulated_fixed_port_id: bool = False,
     language_options: Optional[Mapping[str, Any]] = None,
     include_experimental_languages: bool = False,
-    embed_auditing_info: bool = False
+    embed_auditing_info: bool = False,
+    code_generator_type: Optional[Type[AbstractGenerator]] = None,
+    support_generator_type: Optional[Type[AbstractGenerator]] = None,
+    **kwargs: Any,
 ) -> GenerationResult:
     """
     Helper method that uses default settings and built-in templates to generate types for a given
@@ -317,6 +308,11 @@ def generate_all(
     :param embed_auditing_info:
         If True then additional information about the inputs and environment used to generate source will be embedded in
         the generated files at the cost of build reproducibility.
+    :param Optional[Type[AbstractGenerator]] code_generator_type: The type of code generator to use. If None then a
+        default code generator will be used.
+    :param Optional[Type[AbstractGenerator]] support_generator_type: The type of support generator to use. If None then
+        a default support generator will be used.
+    :param kwargs: Additional arguments passed into the generator constructors.
 
     :returns GenerationResult: A dataclass containing lists of target files, dependent files, and generated files
         (i.e explicit inputs, discovered inputs, and determined outputs).
@@ -328,13 +324,21 @@ def generate_all(
         .create()
     )
 
-    if lookup_dir is None:
-        lookup_dir = []
+    # break up root_namespace_directories_or_names into directories and names
+    lookup_dirs = []
+    root_namespace_names = []
+
+    for item in root_namespace_directories_or_names:
+        path_item = Path(item)
+        if path_item.is_dir() or path_item.is_absolute():
+            lookup_dirs.append(path_item)
+        else:
+            root_namespace_names.append(path_item)
 
     target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
         target_files,
-        root_namespace_directories_or_names,
-        lookup_dir,
+        root_namespace_names,
+        lookup_dirs,
         allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
     )
 
@@ -347,7 +351,18 @@ def generate_all(
     for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
         namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(outdir), language_context)
 
-        generator, support_generator = create_default_generators(namespace)
+        if code_generator_type is None:
+            from nunavut.jinja import DSDLCodeGenerator  # pylint: disable=import-outside-toplevel
+
+            code_generator_type = DSDLCodeGenerator
+
+        if support_generator_type is None:
+            from nunavut.jinja import SupportGenerator  # pylint: disable=import-outside-toplevel
+
+            support_generator_type = SupportGenerator
+
+        generator = code_generator_type(namespace, **kwargs)
+        support_generator = support_generator_type(namespace, **kwargs)
 
         if should_generate_support:
             generated_files += list(

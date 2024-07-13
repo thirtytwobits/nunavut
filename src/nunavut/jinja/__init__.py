@@ -170,6 +170,7 @@ class CodeGenerator(nunavut._generators.AbstractGenerator):
         builtin_template_path: str = DEFAULT_TEMPLATE_PATH,
         package_name_for_templates: typing.Optional[str] = None,
         search_policy: ResourceSearchPolicy = ResourceSearchPolicy.FIND_ALL,
+        **_: typing.Any,
     ):
         super().__init__(namespace, generate_namespace_types)
 

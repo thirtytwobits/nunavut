@@ -11,9 +11,8 @@
 import argparse
 import sys
 import textwrap
-import typing
-
 from pathlib import Path
+from typing import Any, Optional, TypeVar
 
 from .parsers import NunavutArgumentParser
 
@@ -30,8 +29,8 @@ class _LazyVersionAction(argparse._VersionAction):
         self,
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
-        values: typing.Any,
-        option_string: typing.Optional[str] = None,
+        values: Any,
+        option_string: Optional[str] = None,
     ) -> None:
         # pylint: disable=import-outside-toplevel
         from nunavut._version import __version__
@@ -40,7 +39,7 @@ class _LazyVersionAction(argparse._VersionAction):
         parser.exit()
 
 
-ParserT = typing.TypeVar("ParserT")
+ParserT = TypeVar("ParserT")
 """
 Type variable for the concrete parser to create.
 """
@@ -78,38 +77,6 @@ def _make_parser(parser_type: ParserT) -> ParserT:
     )
 
     parser.add_argument(
-        "--path-to-root",
-        "-r",
-        action="append",
-        help=textwrap.dedent(
-            """
-        When operating on a target set of dsdl files this argument is required to specify
-        a set of valid paths to or folder names of root namespaces. For example:
-
-            nnvg types/animals/felines/Tabby.1.0.dsdl types/animals/canines/Boxer.1.0.dsdl
-
-        will fail unless the path describing the root is provided:
-
-            nnvg --path-to-root types/animals types/animals/cats/Tabby.1.0.dsdl \\
-                                              types/animals/dogs/Boxer.1.0.dsdl
-
-        If multiple roots are targeted then each root path will need to be enabled:
-
-            nnvg -r types/animals -r types/plants types/animals/cats/Tabby.1.0.dsdl \\
-                                                  types/plants/trees/Fir.1.0.dsdl
-
-        An additional syntax is supported where the root can be specified as part of the target
-        path using a colon to separate the two which obviates the need to provide this argument:
-
-            nnvg types/animals:cats/Tabby.1.0.dsdl types/plants:trees/Fir.1.0.dsdl
-
-        When in legacy mode (given a single path, not target files) this argument is ignored.
-
-    """
-        ).lstrip(),
-    )
-
-    parser.add_argument(
         "target_files_or_root_namespace",
         default=".",
         nargs="*",
@@ -118,12 +85,11 @@ def _make_parser(parser_type: ParserT) -> ParserT:
 
         One or more dsdl files to generate from.
 
-        All dependent types found in the target dsdl files will be generated and must be
-        available either as another target or as a dsdl file under one of the --lookup-dir
-        directories.
+        All dependent types found in the target dsdl files will be generated and must be available
+        either as another target or as a dsdl file under one of the --lookup-dir directories.
 
-        A --path-to-root argument for each unique root path among the list of files is
-        required if not using the colon syntax.
+        A --lookup-dir argument for each unique root path among the list of files is required if
+        not using the colon syntax.
 
         Colon Syntax
         ------------
@@ -146,9 +112,10 @@ def _make_parser(parser_type: ParserT) -> ParserT:
         Deprecated/Legacy Behaviour
         ---------------------------
 
-            If a single path to a folder is provided then this script runs in legacy mode where
-            this path is treated as a root namespace to generate types from. In this mode no
-            dependent types will be generated unless they are also found under this folder.
+            If a single path to a folder is provided then this script runs in legacy mode where this
+            path is treated as a root namespace to generate types from. In this mode no dependent
+            types will be generated unless they are also found under this folder.
+
     """
         ).lstrip(),
     )
@@ -160,19 +127,54 @@ def _make_parser(parser_type: ParserT) -> ParserT:
         help=textwrap.dedent(
             """
 
-        List of other namespace directories containing data type definitions that are
-        referred to from the target root namespace. For example, if you are reading a
-        vendor-specific namespace, the list of lookup directories should always include
-        a path to the standard root namespace "uavcan", otherwise the types defined in
-        the vendor-specific namespace won't be able to use data types from the standard
-        namespace.
+        List of other namespace directories containing data type definitions that are referred to
+        from the target root namespace. For example, if you are reading a vendor-specific namespace,
+        the list of lookup directories should always include a path to the standard root namespace
+        "uavcan", otherwise the types defined in the vendor-specific namespace won't be able to use
+        data types from the standard namespace.
+
+        For a given target set of dsdl files this argument is required to specify a set of valid
+        paths to or folder names of root namespaces. For example ::
+
+            nnvg types/animals/felines/Tabby.1.0.dsdl types/animals/canines/Boxer.1.0.dsdl
+
+        will fail unless the path describing the root is provided ::
+
+            nnvg --lookup-dir types/animals types/animals/cats/Tabby.1.0.dsdl \\
+                                            types/animals/dogs/Boxer.1.0.dsdl
+
+        If multiple roots are targeted then each root path will need to be enabled ::
+
+            nnvg -I types/animals -I types/plants types/animals/cats/Tabby.1.0.dsdl \\
+                                                  types/plants/trees/Fir.1.0.dsdl
+
+
+        For target files this argument is required to specify a set of valid paths to or folder
+        names of root namespaces, however; an additional syntax is supported where the root for a
+        target file can be specified as part of the target path using a colon to separate the two ::
+
+            nnvg types/animals:cats/Tabby.1.0.dsdl types/plants:trees/Fir.1.0.dsdl
+
+
+        This is the recommended syntax as it allows all target files to be specified as relative
+        paths and reserves this argument to specify concrete lookup directories ::
+
+            nnvg --lookup-dir /path/to/types types/animals:mammals/cats/Tabby.1.0.dsdl \\
+                                             types/plants:trees/conifers/Fir.1.0.dsdl
 
         Additional directories can also be specified through an environment variable
-        DSDL_INCLUDE_PATH where the path entries are separated by colons ":" on
-        posix systems and ";" on Windows.
+        DSDL_INCLUDE_PATH where the path entries are separated by colons ":" on posix systems and
+        ";" on Windows ::
 
-        CYPHAL_PATH will also be used to create additional includes where each folder
-        directly under this path will be a lookup directory.
+            DSDL_INCLUDE_PATH=/path/to/types/animals:/path/to/types/plants \\
+                nnvg animals:mammals/cats/Tabby.1.0.dsdl \\
+                     plants:trees/conifers/Fir.1.0.dsdl
+
+        CYPHAL_PATH is similarly used (and formatted) but the paths in this variable are listed and
+        each folder under each path will be a lookup directory ::
+
+            CYPHAL_PATH=/path/to/types nnvg animals:mammals/cats/Tabby.1.0.dsdl \\
+                                            plants:trees/conifers/Fir.1.0.dsdl
 
     """
         ).lstrip(),
@@ -211,7 +213,9 @@ def _make_parser(parser_type: ParserT) -> ParserT:
     )
 
     extended_group.add_argument(
+        "--templates-dir",
         "--templates",
+        type=Path,
         help=textwrap.dedent(
             """
 
@@ -225,7 +229,9 @@ def _make_parser(parser_type: ParserT) -> ParserT:
     )
 
     extended_group.add_argument(
+        "--support-templates-dir",
         "--support-templates",
+        type=Path,
         help=textwrap.dedent(
             """
 

@@ -63,6 +63,35 @@ def run_nnvg(request: pytest.FixtureRequest) -> typing.Callable:  # pylint: disa
     return _run_nnvg
 
 
+
+@pytest.fixture
+def run_nnvg_main(request: pytest.FixtureRequest) -> typing.Callable:  # pylint: disable=unused-argument
+    """
+    Test helper for invoking the nnvg command-line script as part of a unit test.
+    """
+
+    def _run_nnvg_main(
+        _: typing.Any,
+        args: typing.List[str],
+        env: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> int:
+        """
+        Helper to invoke the same nunavut main nnvg uses as a direct call
+        """
+        from nunavut.cli.runners import main  # pylint: disable=import-outside-toplevel
+
+        this_env = os.environ.copy()
+        os.environ.update(env or {})
+
+        try:
+            return main(args)
+        finally:
+            os.environ.clear()
+            for key, value in this_env.items():
+                os.environ[key] = value
+
+    return _run_nnvg_main
+
 class GenTestPaths:
     """Helper to generate common paths used in our unit tests."""
 
@@ -252,7 +281,7 @@ def assert_language_config_value(request: pytest.FixtureRequest) -> typing.Calla
 
 
 @pytest.fixture
-def jinja_filter_tester(request: pytest.FixtureRequest):  # pylint: disable=unused-argument
+def jinja_filter_tester(request: pytest.FixtureRequest) -> typing.Any:  # pylint: disable=unused-argument
     """
     Use to create fluent but testable documentation for Jinja filters and tests
 
