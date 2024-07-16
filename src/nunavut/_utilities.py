@@ -213,10 +213,11 @@ class ResourceType(enum.Enum):
     Common Nunavut classifications for Python package resources.
     """
 
-    ANY = 0
+    NONE = 0
     CONFIGURATION = 1
     SERIALIZATION_SUPPORT = 2
-    TYPE_SUPPORT = 3
+    TYPE_SUPPORT = 4
+    ANY = 0xFF
 
 
 @enum.unique

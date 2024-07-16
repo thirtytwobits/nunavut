@@ -31,13 +31,6 @@
 //    Support Namespace : {{ nunavut.support.namespace }}
 //    Support Version   : {{ nunavut.support.version }}
 {%- endif %}
-{%- for template_set in nunavut.template_sets %}
-//
-// Template Set ({{ template_set[0] }})
-//    priority   : {{ loop.index0 }}
-//    package    : {{ template_set[1] }}
-//    version    : {{ template_set[2] }}
-{%- endfor %}
 //
 // Platform
 {{ nunavut.platform_version | text_table("//     ") }}

@@ -53,7 +53,7 @@ class IncludeGenerator:
         if not self._omit_serialization_support:
             path_list += [
                 (namespace_path / pathlib.Path(p.name).with_suffix(output_extension)).as_posix()
-                for p in self._language.get_support_files(ResourceType.SERIALIZATION_SUPPORT)
+                for p in self._language.get_support_files(ResourceType.SERIALIZATION_SUPPORT.value)
             ]
 
         prefer_system_includes = self._language.get_config_value_as_bool("prefer_system_includes", False)

@@ -9,6 +9,7 @@
 
 import abc
 import argparse
+import itertools
 import logging
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ from pydsdl import read_namespace as read_dsdl_namespace
 from nunavut._generators import AbstractGenerator as Generator
 from nunavut._generators import generate_all
 from nunavut._namespace import build_namespace_tree
+from nunavut._utilities import ResourceType
 from nunavut.lang import Language, LanguageContext, LanguageContextBuilder
 
 
@@ -183,17 +185,24 @@ class LegacyArgparseRunner(Runner):
         #
         generator_args = {
             "generate_namespace_types": self._args.generate_namespace_types,
-            "templates_dir": self._args.templates_dir,
-            "support_templates_dir": self._args.support_templates_dir,
             "trim_blocks": self._args.trim_blocks,
             "lstrip_blocks": self._args.lstrip_blocks,
             "post_processors": self._args.post_processors,
         }
 
-        from nunavut.jinja import (  # pylint: disable=import-outside-toplevel
-            DSDLCodeGenerator, SupportGenerator)
+        from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
 
-        return (DSDLCodeGenerator(root_namespace, **generator_args), SupportGenerator(root_namespace, **generator_args))
+        support_resource_types = (
+            ResourceType.ANY.value
+            if not self._args.omit_serialization_support
+            else ResourceType.ANY.value & ~ResourceType.SERIALIZATION_SUPPORT.value
+        )
+        return (
+            DSDLCodeGenerator(root_namespace, templates_dir=self._args.templates_dir, **generator_args),
+            SupportGenerator(
+                support_resource_types, root_namespace, templates_dir=self._args.support_templates_dir, **generator_args
+            ),
+        )
 
     def _list_outputs_only(self, code_generator: Optional[Generator], support_generator: Optional[Generator]) -> None:
         if code_generator is not None:
@@ -216,13 +225,13 @@ class LegacyArgparseRunner(Runner):
 
         if support_generator is not None:
             self.stdout_lister(
-                support_generator.get_templates(omit_serialization_support=self._args.omit_serialization_support),
+                support_generator.get_templates(),
                 lambda p: str(p.resolve()),
             )
 
         if code_generator is not None:
             self.stdout_lister(
-                code_generator.get_templates(omit_serialization_support=self._args.omit_serialization_support),
+                code_generator.get_templates(),
                 lambda p: str(p.resolve()),
             )
 
@@ -281,8 +290,15 @@ class StandardArgparseRunner(Runner):
             self.stdout_lister(result.generated_files, lambda p: str(p.resolve()), end="")
 
         elif self._args.list_inputs:
-            self.stdout_lister(result.target_files, lambda p: str(p.resolve()))
-            self.stdout_lister(result.dependent_files, lambda p: str(p.resolve()), end="")
+            self.stdout_lister(
+                itertools.chain(
+                    iter(result.template_files),
+                    map(lambda p: p.source_file_path, result.target_files),
+                    map(lambda p: p.source_file_path, result.dependent_files),
+                ),
+                lambda p: str(p.resolve()),
+                end="",
+            )
 
         return 0
 
@@ -302,8 +318,7 @@ def main(command_line_args: Optional[Any] = None) -> int:
     Main entry point for command-line scripts.
     """
 
-    from . import \
-        make_nunavut_parser  # pylint: disable=import-outside-toplevel
+    from . import make_nunavut_parser  # pylint: disable=import-outside-toplevel
 
     #
     # Parse the command-line arguments.

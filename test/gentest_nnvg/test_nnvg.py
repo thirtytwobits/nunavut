@@ -7,7 +7,9 @@
 import json
 import os
 import subprocess
+import sys
 import typing
+from io import StringIO
 from pathlib import Path
 
 import pydsdl
@@ -44,6 +46,7 @@ def test_DSDL_INCLUDE_PATH(gen_paths: typing.Any, run_nnvg_main: typing.Callable
     env = {"DSDL_INCLUDE_PATH": f"{herringtec_path}{os.pathsep}{scotec_path}"}
     run_nnvg_main(gen_paths, nnvg_args0, env=env)
 
+
 def test_CYPHAL_PATH(gen_paths: typing.Any, run_nnvg_main: typing.Callable) -> None:
     """
     Verify that the CYPHAL_PATH environment variable is used by nnvg.
@@ -67,6 +70,7 @@ def test_CYPHAL_PATH(gen_paths: typing.Any, run_nnvg_main: typing.Callable) -> N
 
     env = {"CYPHAL_PATH": f"{gen_paths.dsdl_dir}"}
     run_nnvg_main(gen_paths, nnvg_args0, env=env)
+
 
 def test_nnvg_heals_missing_dot_in_extension(gen_paths: typing.Any, run_nnvg_main: typing.Callable) -> None:
     """
@@ -93,43 +97,54 @@ def test_nnvg_heals_missing_dot_in_extension(gen_paths: typing.Any, run_nnvg_mai
 
 
 @pytest.mark.parametrize("generate_support", ["as-needed", "never", "always", "only"])
-def test_list_inputs(gen_paths: typing.Any, run_nnvg: typing.Callable, generate_support: str) -> None:
+def test_list_inputs(gen_paths: typing.Any, run_nnvg_main: typing.Callable, generate_support: str) -> None:
     """
     Verifies nnvg's --list-input mode.
     """
-    expected_output = [
-        gen_paths.templates_dir / Path("Any.j2"),
+    code_templates = [gen_paths.templates_dir / Path("Any.j2")]
+
+    types = [
         gen_paths.dsdl_dir / Path("uavcan") / Path("test") / Path("TestType.0.8.dsdl"),
+        gen_paths.dsdl_dir / Path("scotec") / Path("Timer.1.0.dsdl"),
     ]
 
-    expected_serialization_support_outputs = [
-        gen_paths.lang_src_dir / Path("c") / Path("support") / Path("serialization").with_suffix(".j2")
-    ]
+    support_files = [gen_paths.support_templates_dir / Path("serialization").with_suffix(".j2")]
 
-    # when #58 is fixed `(gen_paths.dsdl_dir / Path('scotec') / Path('Timer.1.0.dsdl')).as_posix()`
     # should be added to this list.
     nnvg_args = [
         "--templates",
         gen_paths.templates_dir.as_posix(),
+        "--support-templates",
+        gen_paths.support_templates_dir.as_posix(),
         "-O",
         gen_paths.out_dir.as_posix(),
         "--target-language",
-        "c",
+        "js",
+        "-Xlang",
         "-I",
         (gen_paths.dsdl_dir / Path("scotec")).as_posix(),
-        "--list-inputs",
+        "-I",
         (gen_paths.dsdl_dir / Path("uavcan")).as_posix(),
+        "--list-inputs",
         f"--generate-support={generate_support}",
+        "uavcan/test/TestType.0.8.dsdl",
     ]
 
-    if generate_support == "only":
-        expected_output = expected_serialization_support_outputs
-    elif generate_support != "never":
-        expected_output = expected_output + expected_serialization_support_outputs
+    # Always types because we use the types to determine what support to include.
+    if generate_support == "never":
+        expected_output = types + code_templates
+    elif generate_support == "only":
+        expected_output = types + support_files
+    else:
+        expected_output = types + code_templates + support_files
 
-    completed = run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
-    completed_wo_empty = sorted([Path(i) for i in completed if len(i) > 0])
-    assert sorted(expected_output) == sorted(completed_wo_empty)
+    real_stdout = sys.stdout
+    mock_stdout = StringIO()
+    sys.stdout = mock_stdout
+    assert 0 == run_nnvg_main(gen_paths, nnvg_args)
+    sys.stdout = real_stdout
+    completed = [Path(p) for p in mock_stdout.getvalue().split(";")]
+    assert sorted(expected_output) == sorted(completed)
 
 
 def test_list_inputs_w_namespaces(gen_paths: typing.Any, run_nnvg: typing.Callable) -> None:
@@ -465,7 +480,7 @@ def test_generate_support_only(gen_paths: typing.Any, run_nnvg: typing.Callable)
 @pytest.mark.parametrize("generate_support", ["as-needed", "never", "always", "only"])
 @pytest.mark.parametrize("omit_serialization", [True, False])
 def test_generate_support(
-    generate_support: str, omit_serialization: bool, gen_paths: typing.Any, run_nnvg: typing.Callable
+    generate_support: str, omit_serialization: bool, gen_paths: typing.Any, run_nnvg_main: typing.Callable
 ) -> None:
     """
     Verifies expected language option defaults can be overridden.
@@ -482,17 +497,19 @@ def test_generate_support(
         "c",
         "-I",
         (gen_paths.dsdl_dir / Path("scotec")).as_posix(),
+        "-I",
+        (gen_paths.dsdl_dir / Path("uavcan")).as_posix(),
         f"--generate-support={generate_support}",
     ]
 
     if omit_serialization:
         nnvg_args.append("--omit-serialization-support")
 
-    nnvg_args.append((gen_paths.dsdl_dir / Path("uavcan")).as_posix())
+    nnvg_args.append("uavcan/test/TestType.0.8.dsdl")
 
     # TODO: a more generalized test is needed as the C language doesn't have any language support files
     #       to cover cases where serialization is omitted but language support is not.
-    run_nnvg(gen_paths, nnvg_args)
+    run_nnvg_main(gen_paths, nnvg_args)
     for support_output_path in support_output:
         if generate_support == "never":
             assert not support_output_path.exists()
@@ -614,23 +631,3 @@ def test_list_configuration(gen_paths: typing.Any, run_nnvg: typing.Callable) ->
     )
     assert len(parsed_config[default_target_section_name]) > 0
     print(yaml.dump(parsed_config))
-
-
-def test_support_templates_dir(gen_paths: typing.Any, run_nnvg: typing.Callable) -> None:
-    """
-    Use the --support-templates option to find templates for support generation
-    """
-    nnvg_args = [
-        "--templates",
-        gen_paths.templates_dir.as_posix(),
-        "--support-templates",
-        gen_paths.support_templates_dir.as_posix(),
-        "-O",
-        gen_paths.out_dir.as_posix(),
-        "-I",
-        (gen_paths.dsdl_dir / Path("scotec")).as_posix(),
-        "--list-inputs",
-        (gen_paths.dsdl_dir / Path("uavcan")).as_posix(),
-    ]
-
-    run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")

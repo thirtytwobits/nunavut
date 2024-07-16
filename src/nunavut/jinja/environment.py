@@ -291,7 +291,7 @@ class CodeGenEnvironment(Environment):
     Jinja Environment optimized for compile-time generation of source code
     (i.e. as opposed to dynamically generating webpages).
 
-    Do not insatiate directly. Use the :class:`CodeGenEnvironmentBuilder` to create an instance.
+    Do not instanceate directly. Use the :class:`CodeGenEnvironmentBuilder` to create an instance.
 
     .. invisible-code-block: python
 
@@ -489,13 +489,6 @@ class CodeGenEnvironment(Environment):
             "support",
             {"omit": omit_serialization_support, "namespace": support_namespace, "version": support_version},
         )
-
-        if "template_sets" not in nunavut_namespace:
-            # pylint: disable=import-outside-toplevel
-            from nunavut.jinja.loaders import DSDLTemplateLoader
-
-            if isinstance(self.loader, DSDLTemplateLoader):
-                setattr(nunavut_namespace, "template_sets", self.loader.get_template_sets())
 
         if "version" not in nunavut_namespace:
             # pylint: disable=import-outside-toplevel

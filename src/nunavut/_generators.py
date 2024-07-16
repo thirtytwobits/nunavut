@@ -20,12 +20,25 @@ from pydsdl import read_files as read_dsdl_files
 from pydsdl import read_namespace as read_dsdl_namespace
 
 from nunavut._namespace import Namespace, build_namespace_tree
-from nunavut._utilities import YesNoDefault
+from nunavut._utilities import YesNoDefault, ResourceType
 from nunavut.lang import LanguageContext, LanguageContextBuilder
 from nunavut.lang._language import Language
 
 
-@dataclass
+@dataclass(frozen=True)
+class DSDLFilePath:
+    """
+    A simple data class to hold the path to a DSDL file and the root of the namespace it is in.
+    """
+
+    path_to_namespace: Path
+    """The path to the root of the namespace containing the DSDL file."""
+
+    source_file_path: Path
+    """The path to the DSDL file."""
+
+
+@dataclass(frozen=True)
 class GenerationResult:
     """
     A simple data class to hold the results of a generation operation.
@@ -34,10 +47,10 @@ class GenerationResult:
     lctx: LanguageContext
     """The language context used to generate outputs."""
 
-    target_files: list[tuple[Path, Path]]
+    target_files: list[DSDLFilePath]
     """The set of explicit files targeted for generation."""
 
-    dependent_files: list[tuple[Path, Path]]
+    dependent_files: list[DSDLFilePath]
     """
     The set of files determined to be dependencies of one or more `target_files`. Note that no target file will be in
     this list even if it is depended on by another target file. It is assumed that any target file may depend on any
@@ -47,6 +60,11 @@ class GenerationResult:
     generated_files: list[Path]
     """
     The set of files that were (or would be, for dry runs) generated including support files where these are required.
+    """
+
+    template_files: list[Path]
+    """
+    The set of template files used to generate the `generated_files`.
     """
 
 
@@ -61,13 +79,15 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         to force generation files for namespaces and NO to suppress.
         DEFAULT will generate namespace files based on the language
         preference.
+    :param Any kwargs: Additional arguments to pass into generators.
     """
 
     def __init__(
         self,
         namespace: Namespace,
         generate_namespace_types: YesNoDefault = YesNoDefault.DEFAULT,
-    ):
+        **kwargs: Any,
+    ):  # pylint: disable=unused-argument
         self._namespace = namespace
         if generate_namespace_types == YesNoDefault.YES:
             self._generate_namespace_types = True
@@ -97,10 +117,9 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         return self._generate_namespace_types
 
     @abc.abstractmethod
-    def get_templates(self, omit_serialization_support: bool = False) -> Iterable[Path]:
+    def get_templates(self) -> Iterable[Path]:
         """
         Enumerate all templates found in the templates path.
-        :param bool omit_serialization_support: If True then templates needed only for serialization will be omitted.
         :return: A list of paths to all templates found by this Generator object.
         """
         raise NotImplementedError()
@@ -216,12 +235,17 @@ def generate_types(
     from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
 
     generator = DSDLCodeGenerator(namespace)
-    support_generator = SupportGenerator(namespace)
+    support_resource_types = (
+        ResourceType.ANY.value if not omit_serialization_support else ~ResourceType.SERIALIZATION_SUPPORT.value
+    )
+    support_generator = SupportGenerator(support_resource_types, namespace)
 
+    template_files = list(support_generator.get_templates())
     generated_files = list(
         support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
     )
 
+    template_files += list(generator.get_templates())
     generated_files += list(
         generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
     )
@@ -230,6 +254,7 @@ def generate_types(
         [(ct.source_file_path_to_root, ct.source_file_path) for ct in type_map],
         [],
         generated_files,
+        template_files,
     )
 
 
@@ -239,6 +264,7 @@ def generate_all(
     target_files: Iterable[Union[str, Path]],
     root_namespace_directories_or_names: Iterable[Union[str, Path]],
     outdir: Path,
+    should_generate_code: bool = True,
     should_generate_support: bool = True,
     omit_serialization_support: bool = False,
     dry_run: bool = False,
@@ -249,6 +275,7 @@ def generate_all(
     embed_auditing_info: bool = False,
     code_generator_type: Optional[Type[AbstractGenerator]] = None,
     support_generator_type: Optional[Type[AbstractGenerator]] = None,
+    generate_namespace_types: YesNoDefault = YesNoDefault.DEFAULT,
     **kwargs: Any,
 ) -> GenerationResult:
     """
@@ -285,6 +312,8 @@ def generate_all(
 
     :param Path outdir:
         The path to generate code at and under.
+    :param bool should_generate_code:
+        If True then the generator will emit code for the types provided in `target_files`.
     :param bool should_generate_support:
         If True then the generator will emit additional support code in addition to the types themselves.
     :param bool omit_serialization_support:
@@ -324,21 +353,9 @@ def generate_all(
         .create()
     )
 
-    # break up root_namespace_directories_or_names into directories and names
-    lookup_dirs = []
-    root_namespace_names = []
-
-    for item in root_namespace_directories_or_names:
-        path_item = Path(item)
-        if path_item.is_dir() or path_item.is_absolute():
-            lookup_dirs.append(path_item)
-        else:
-            root_namespace_names.append(path_item)
-
     target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
         target_files,
-        root_namespace_names,
-        lookup_dirs,
+        root_namespace_directories_or_names,
         allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
     )
 
@@ -347,7 +364,11 @@ def generate_all(
         root_path = dsdl_file.source_file_path_to_root
         dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
 
-    generated_files = []
+    generated_files: set[Path] = set()
+    template_files: set[Path] = set()
+    support_resource_types = (
+        ResourceType.ANY.value if not omit_serialization_support else ~ResourceType.SERIALIZATION_SUPPORT.value
+    )
     for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
         namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(outdir), language_context)
 
@@ -361,22 +382,29 @@ def generate_all(
 
             support_generator_type = SupportGenerator
 
-        generator = code_generator_type(namespace, **kwargs)
-        support_generator = support_generator_type(namespace, **kwargs)
+        generator = code_generator_type(namespace, generate_namespace_types=generate_namespace_types, **kwargs)
+        support_generator = support_generator_type(
+            support_resource_types, namespace, generate_namespace_types=generate_namespace_types, **kwargs
+        )
 
         if should_generate_support:
-            generated_files += list(
+            template_files.update(support_generator.get_templates())
+            generated_files.update(
                 support_generator.generate_all(
                     dry_run, not no_overwrite, omit_serialization_support, embed_auditing_info
                 )
             )
-        generated_files += list(
-            generator.generate_all(dry_run, not no_overwrite, omit_serialization_support, embed_auditing_info)
-        )
+
+        if should_generate_code:
+            template_files.update(generator.get_templates())
+            generated_files.update(
+                generator.generate_all(dry_run, not no_overwrite, omit_serialization_support, embed_auditing_info)
+            )
 
     return GenerationResult(
         language_context,
-        [(ct.source_file_path_to_root, ct.source_file_path) for ct in target_dsdl_files],
-        [(ct.source_file_path_to_root, ct.source_file_path) for ct in dependent_dsdl_files],
-        generated_files,
+        [DSDLFilePath(ct.source_file_path_to_root, ct.source_file_path) for ct in target_dsdl_files],
+        [DSDLFilePath(ct.source_file_path_to_root, ct.source_file_path) for ct in dependent_dsdl_files],
+        list(generated_files),
+        list(template_files),
     )

@@ -412,7 +412,7 @@ class Language(metaclass=abc.ABCMeta):
         return self._config.get_config_value_as_list(self._section, key, default_value)
 
     def get_support_files(
-        self, resource_type: ResourceType = ResourceType.ANY
+        self, resource_type: int = ResourceType.ANY.value
     ) -> typing.Generator[pathlib.Path, None, None]:
         """
         Iterates over supporting files embedded within the Nunavut distribution.
