@@ -26,7 +26,7 @@ from nunavut._templates import (
     template_language_list_filter,
     template_language_test,
 )
-from nunavut._utilities import YesNoDefault, cached_property
+from nunavut._utilities import YesNoDefault, cached_property, ResourceType
 from nunavut.jinja.environment import Environment
 from nunavut.lang._common import IncludeGenerator, TokenEncoder, UniqueNameGenerator
 from nunavut.lang._language import Language as BaseLanguage
@@ -1067,10 +1067,10 @@ def filter_includes(
         jinja_filter_tester(filter_includes, template, rendered, lctx, my_type=my_type)
     """
     try:
-        omit_serialization_support = env.globals["nunavut"].support["omit"]
+        resource_types = int(env.globals["nunavut"].resource_types["bitmask"])
     except KeyError:
-        omit_serialization_support = False
-    return IncludeGenerator(language, t, omit_serialization_support).generate_include_filepart_list(
+        resource_types = ResourceType.ANY.value
+    return IncludeGenerator(language, t, resource_types).generate_include_filepart_list(
         language.extension, sort
     )
 
@@ -1587,7 +1587,7 @@ def filter_minimum_required_capacity_bits(t: pydsdl.SerializableType) -> int:
             attributes=[field_one, field_two],
             deprecated=False,
             fixed_port_id=None,
-            source_file_path='',
+            source_file_path='uavcan/foo.0.1.dsdl',
             has_parent_service = False
         )
 
@@ -1597,7 +1597,7 @@ def filter_minimum_required_capacity_bits(t: pydsdl.SerializableType) -> int:
             attributes=[field_one, field_two],
             deprecated=False,
             fixed_port_id=None,
-            source_file_path='',
+            source_file_path='uavcan/foo.0.1.dsdl',
             has_parent_service = False
         )
 

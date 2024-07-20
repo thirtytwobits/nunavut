@@ -7,15 +7,12 @@ import json
 from pathlib import Path
 
 from pydsdl import read_namespace
-from nunavut import build_namespace_tree
+
+from nunavut import LanguageContextBuilder, build_namespace_tree
 from nunavut.jinja import DSDLCodeGenerator
-from nunavut import LanguageContextBuilder
-
-import pytest
 
 
-@pytest.mark.parametrize("lang_key", [("cpp")])
-def test_anygen(gen_paths, lang_key):  # type: ignore
+def test_anygen(gen_paths):  # type: ignore
     """
     Verifies that any dsdl type will resolve to an ``Any`` template.
     """
@@ -32,7 +29,7 @@ def test_anygen(gen_paths, lang_key):  # type: ignore
 
     assert outfile is not None
 
-    with open(str(outfile), "r") as json_file:
+    with open(str(outfile), "r", encoding="utf-8") as json_file:
         json_blob = json.load(json_file)
 
     assert json_blob is not None

@@ -28,13 +28,13 @@ def test_DSDL_INCLUDE_PATH(gen_paths: typing.Any, run_nnvg_main: typing.Callable
     nnvg_args0 = [
         "--templates",
         gen_paths.templates_dir.as_posix(),
+        "--support-templates",
+        gen_paths.support_templates_dir.as_posix(),
         "-O",
         gen_paths.out_dir.as_posix(),
         "-l",
         "js",
         "-Xlang",
-        "-I",
-        (gen_paths.dsdl_dir / Path("uavcan")).as_posix(),
         (gen_paths.dsdl_dir / Path("uavcan", "test", "TestType.0.8.dsdl")).as_posix(),
     ]
 
@@ -43,7 +43,8 @@ def test_DSDL_INCLUDE_PATH(gen_paths: typing.Any, run_nnvg_main: typing.Callable
 
     scotec_path = (gen_paths.dsdl_dir / Path("scotec")).as_posix()
     herringtec_path = (gen_paths.dsdl_dir / Path("herringtec")).as_posix()
-    env = {"DSDL_INCLUDE_PATH": f"{herringtec_path}{os.pathsep}{scotec_path}"}
+    uavcan_path = (gen_paths.dsdl_dir / Path("uavcan")).as_posix()
+    env = {"DSDL_INCLUDE_PATH": f"{herringtec_path}{os.pathsep}{scotec_path}{os.pathsep}{uavcan_path}"}
     run_nnvg_main(gen_paths, nnvg_args0, env=env)
 
 
@@ -138,13 +139,9 @@ def test_list_inputs(gen_paths: typing.Any, run_nnvg_main: typing.Callable, gene
     else:
         expected_output = types + code_templates + support_files
 
-    real_stdout = sys.stdout
-    mock_stdout = StringIO()
-    sys.stdout = mock_stdout
-    assert 0 == run_nnvg_main(gen_paths, nnvg_args)
-    sys.stdout = real_stdout
-    completed = [Path(p) for p in mock_stdout.getvalue().split(";")]
-    assert sorted(expected_output) == sorted(completed)
+    completed = run_nnvg_main(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
+    completed_wo_empty = sorted([Path(i) for i in completed if len(i) > 0])
+    assert sorted(expected_output) == sorted(completed_wo_empty)
 
 
 def test_list_inputs_w_namespaces(gen_paths: typing.Any, run_nnvg: typing.Callable) -> None:
@@ -356,7 +353,7 @@ def test_language_option_defaults(gen_paths: typing.Any, run_nnvg: typing.Callab
 
 @pytest.mark.parametrize("target_endianness_override", ["any", "big", "little"])
 def test_language_option_overrides(
-    target_endianness_override: str, gen_paths: typing.Any, run_nnvg: typing.Callable
+    target_endianness_override: str, gen_paths: typing.Any, run_nnvg_main: typing.Callable
 ) -> None:
     """
     Verifies expected language option defaults can be overridden.
@@ -379,7 +376,7 @@ def test_language_option_overrides(
         (gen_paths.dsdl_dir / Path("uavcan")).as_posix(),
     ]
 
-    run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
+    run_nnvg_main(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
     with open(expected_output, "r", encoding="utf-8") as generated:
         generated_results = json.load(generated)
         assert generated_results["target_endianness"] == target_endianness_override

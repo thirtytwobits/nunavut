@@ -7,25 +7,26 @@ import typing
 from pathlib import Path
 
 import pytest
-from nunavut import generate_types, generate_all
+from nunavut import generate_types, generate_all, ResourceType
 
 
 @pytest.mark.parametrize(
-    "lang_key,generate_support,language_options",
+    "lang_key,resource_types,language_options",
     [
-        ("cpp", False, {}),
-        ("cpp", True, {}),
-        ("cpp", True, {"std": "c++17"}),
-        ("c", False, {}),
-        ("c", True, {}),
-        ("py", True, {}),
-        ("html", False, {}),
+        ("cpp", ResourceType.NONE.value, {}),
+        ("cpp", ResourceType.TYPE_SUPPORT.value, {}),
+        ("cpp", ResourceType.ANY.value, {}),
+        ("cpp", ResourceType.ANY.value, {"std": "c++17"}),
+        ("c", ResourceType.NONE.value, {}),
+        ("c", ResourceType.ANY.value, {}),
+        ("py", ResourceType.ANY.value, {}),
+        ("html", ResourceType.NONE.value, {}),
     ],
 )
 def test_realgen(
     gen_paths: typing.Any,
     lang_key: str,
-    generate_support: bool,
+    resource_types: int,
     language_options: typing.Mapping[str, typing.Any],
 ) -> None:
     """
@@ -44,8 +45,7 @@ def test_realgen(
         targets,
         root_namespace_dir,
         gen_paths.out_dir,
-        should_generate_support=generate_support,
-        omit_serialization_support=not generate_support,
+        resource_types=resource_types,
         language_options=language_options,
         include_experimental_languages=True,
     )
@@ -68,8 +68,7 @@ def test_realgen_heartbeat(
         "c",
         [heartbeat],
         root_namespace_dir,
-        gen_paths.out_dir,
-        omit_serialization_support=False
+        gen_paths.out_dir
     )
 
     assert (gen_paths.out_dir / Path("uavcan", "node", "Heartbeat_1_0.h")).exists()

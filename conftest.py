@@ -9,14 +9,16 @@ Configuration for pytest tests including fixtures and hooks.
 
 import logging
 import os
-import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 import textwrap
 import typing
 import urllib
 from doctest import ELLIPSIS
+from io import StringIO
+from pathlib import Path
 
 import pydsdl
 import pytest
@@ -24,7 +26,6 @@ from sybil import Sybil
 from sybil.parsers.rest import DocTestParser, PythonCodeBlockParser
 
 from nunavut import Namespace
-
 
 # +-------------------------------------------------------------------------------------------------------------------+
 # | TEST FIXTURES
@@ -34,7 +35,7 @@ from nunavut import Namespace
 @pytest.fixture
 def run_nnvg(request: pytest.FixtureRequest) -> typing.Callable:  # pylint: disable=unused-argument
     """
-    Test helper for invoking the nnvg command-line script as part of a unit test.
+    Test helper for invoking the nnvg command-line script as a subprocess from a unit test.
     """
 
     def _run_nnvg(
@@ -63,18 +64,19 @@ def run_nnvg(request: pytest.FixtureRequest) -> typing.Callable:  # pylint: disa
     return _run_nnvg
 
 
-
 @pytest.fixture
 def run_nnvg_main(request: pytest.FixtureRequest) -> typing.Callable:  # pylint: disable=unused-argument
     """
-    Test helper for invoking the nnvg command-line script as part of a unit test.
+    Test helper for invoking the main function used by the nnvg command-line script. This is similar to run_nnvg
+    but allows for direct invocation of the main function allowing debugging and testing of the main function from
+    the same process.
     """
 
     def _run_nnvg_main(
         _: typing.Any,
         args: typing.List[str],
         env: typing.Optional[typing.Dict[str, str]] = None,
-    ) -> int:
+    ) -> subprocess.CompletedProcess:
         """
         Helper to invoke the same nunavut main nnvg uses as a direct call
         """
@@ -83,8 +85,21 @@ def run_nnvg_main(request: pytest.FixtureRequest) -> typing.Callable:  # pylint:
         this_env = os.environ.copy()
         os.environ.update(env or {})
 
+        args = [str(arg) for arg in args]
+
         try:
-            return main(args)
+            real_stdout = sys.stdout
+            real_stderr = sys.stderr
+            mock_stdout = StringIO()
+            mock_stderr = StringIO()
+            sys.stdout = mock_stdout
+            sys.stderr = mock_stderr
+            return_code = main(args)
+            sys.stdout = real_stdout
+            sys.stderr = real_stderr
+            stdout_buffer = mock_stdout.getvalue()
+            stderr_buffer = mock_stderr.getvalue()
+            return subprocess.CompletedProcess(args, return_code, stdout_buffer.encode(), stderr_buffer.encode())
         finally:
             os.environ.clear()
             for key, value in this_env.items():
@@ -92,26 +107,27 @@ def run_nnvg_main(request: pytest.FixtureRequest) -> typing.Callable:  # pylint:
 
     return _run_nnvg_main
 
+
 class GenTestPaths:
     """Helper to generate common paths used in our unit tests."""
 
     def __init__(self, test_file: str, keep_temporaries: bool, node_name: str):
-        test_file_path = pathlib.Path(test_file)
+        test_file_path = Path(test_file)
         self.test_name = f"{test_file_path.parent.stem}_{node_name}"
         self.test_dir = test_file_path.parent
         search_dir = self.test_dir.resolve()
-        while search_dir.is_dir() and not (search_dir / pathlib.Path("src")).is_dir():
+        while search_dir.is_dir() and not (search_dir / Path("src")).is_dir():
             search_dir = search_dir.parent
         self.root_dir = search_dir
-        self.templates_dir = self.test_dir / pathlib.Path("templates")
-        self.support_templates_dir = self.test_dir / pathlib.Path("support")
-        self.dsdl_dir = self.test_dir / pathlib.Path("dsdl")
-        self.lang_src_dir = self.root_dir / pathlib.Path("src") / pathlib.Path("nunavut") / pathlib.Path("lang")
+        self.templates_dir = self.test_dir / Path("templates")
+        self.support_templates_dir = self.test_dir / Path("support")
+        self.dsdl_dir = self.test_dir / Path("dsdl")
+        self.lang_src_dir = self.root_dir / Path("src") / Path("nunavut") / Path("lang")
 
         self._keep_temp = keep_temporaries
-        self._out_dir: typing.Optional[pathlib.Path] = None
-        self._build_dir: typing.Optional[pathlib.Path] = None
-        self._dsdl_dir: typing.Optional[pathlib.Path] = None
+        self._out_dir: typing.Optional[Path] = None
+        self._build_dir: typing.Optional[Path] = None
+        self._dsdl_dir: typing.Optional[Path] = None
         self._temp_dirs: typing.List[tempfile.TemporaryDirectory] = []
         print(f'Paths for test "{self.test_name}" under dir {self.test_dir}')
         print(f"(root directory: {self.root_dir})")
@@ -124,20 +140,20 @@ class GenTestPaths:
             temporary_dir.cleanup()
         self._temp_dirs.clear()
 
-    def create_new_temp_dir(self, dir_key: str) -> pathlib.Path:
+    def create_new_temp_dir(self, dir_key: str) -> Path:
         """
         Create a new temporary directory for the test case.
         """
         if self._keep_temp:
-            result = self._ensure_dir(self.build_dir / pathlib.Path(dir_key))
+            result = self._ensure_dir(self.build_dir / Path(dir_key))
         else:
             temporary_dir = tempfile.TemporaryDirectory(dir=str(self.build_dir))
-            result = pathlib.Path(temporary_dir.name)
+            result = Path(temporary_dir.name)
             self._temp_dirs.append(temporary_dir)
         return result
 
     @property
-    def out_dir(self) -> pathlib.Path:
+    def out_dir(self) -> Path:
         """
         The directory to place test output under for this test case.
         """
@@ -146,12 +162,12 @@ class GenTestPaths:
         return self._out_dir
 
     @property
-    def build_dir(self) -> pathlib.Path:
+    def build_dir(self) -> Path:
         """
         The directory to place build artifacts under for this test case.
         """
         if self._build_dir is None:
-            self._build_dir = self._ensure_dir(self.root_dir / pathlib.Path("build"))
+            self._build_dir = self._ensure_dir(self.root_dir / Path("build"))
         return self._build_dir
 
     @staticmethod
@@ -181,7 +197,7 @@ class GenTestPaths:
         return found_outfile
 
     @staticmethod
-    def _ensure_dir(path_dir: pathlib.Path) -> pathlib.Path:
+    def _ensure_dir(path_dir: Path) -> Path:
         try:
             path_dir.mkdir()
         except FileExistsError:
@@ -331,6 +347,7 @@ def jinja_filter_tester(request: pytest.FixtureRequest) -> typing.Any:  # pylint
         target_language_or_language_context: typing.Union[str, LanguageContext],
         **additional_globals: typing.Optional[typing.Dict[str, typing.Any]],
     ) -> str:
+        from nunavut import ResourceType  # pylint: disable=import-outside-toplevel
         from nunavut.jinja import CodeGenEnvironmentBuilder  # pylint: disable=import-outside-toplevel
 
         if isinstance(target_language_or_language_context, LanguageContext):
@@ -343,7 +360,7 @@ def jinja_filter_tester(request: pytest.FixtureRequest) -> typing.Any:  # pylint
             )
 
         if filter_or_list_of_filters is None:
-            additional_filters: typing.Optional[typing.Dict[str, typing.Callable]] = {}
+            additional_filters: typing.Dict[str, typing.Callable] = {}
         elif isinstance(filter_or_list_of_filters, list):
             additional_filters = {}
             for filter_method in filter_or_list_of_filters:
@@ -359,7 +376,8 @@ def jinja_filter_tester(request: pytest.FixtureRequest) -> typing.Any:  # pylint
             .create()
         )
         e.update_nunavut_globals(
-            *lctx.get_target_language().get_support_module(), omit_serialization_support=True, embed_auditing_info=True
+            resource_types=ResourceType.NONE.value,
+            embed_auditing_info=True,
         )
 
         rendered = str(e.get_template("test").render())
@@ -384,6 +402,7 @@ def mock_environment(request: pytest.FixtureRequest) -> typing.Any:  # pylint: d
     support_mock = MagicMock()
     magic_mock_environment.globals = {"nunavut": support_mock}
     support_mock.support = {"omit": True}
+    support_mock.resource_types = {"bitmask": 0}
 
     return magic_mock_environment
 

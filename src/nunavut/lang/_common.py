@@ -14,7 +14,6 @@ import re
 import typing
 
 import pydsdl
-from nunavut._utilities import ResourceType
 
 from ._language import Language
 
@@ -27,12 +26,16 @@ from ._language import Language
 class IncludeGenerator:
     """
     Generates include file paths for a given language and datatype.
+
+    :param Language language: The target language.
+    :param pydsdl.CompositeType t: The datatype to generate include file paths for.
+    :param int resource_types: A bitmask of ResourceType values that are required for the datatype.
     """
 
-    def __init__(self, language: Language, t: pydsdl.CompositeType, omit_serialization_support: bool):
+    def __init__(self, language: Language, t: pydsdl.CompositeType, resource_types: int):
         self._type = t
         self._language = language
-        self._omit_serialization_support = omit_serialization_support
+        self._resource_types = resource_types
 
     def generate_include_filepart_list(self, output_extension: str, sort: bool) -> typing.List[str]:
         """
@@ -50,11 +53,10 @@ class IncludeGenerator:
         namespace_path = pathlib.Path("")
         for namespace_part in self._language.support_namespace:
             namespace_path = namespace_path / pathlib.Path(namespace_part)
-        if not self._omit_serialization_support:
-            path_list += [
-                (namespace_path / pathlib.Path(p.name).with_suffix(output_extension)).as_posix()
-                for p in self._language.get_support_files(ResourceType.SERIALIZATION_SUPPORT.value)
-            ]
+        path_list += [
+            (namespace_path / pathlib.Path(p.name).with_suffix(output_extension)).as_posix()
+            for p in self._language.get_support_files(self._resource_types)
+        ]
 
         prefer_system_includes = self._language.get_config_value_as_bool("prefer_system_includes", False)
         if prefer_system_includes:

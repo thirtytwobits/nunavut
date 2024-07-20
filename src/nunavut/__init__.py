@@ -23,8 +23,9 @@ from ._generators import generate_all
 from ._namespace import Namespace
 from ._namespace import build_namespace_tree
 from ._utilities import TEMPLATE_SUFFIX
-from ._utilities import YesNoDefault
 from ._utilities import DefaultValue
+from ._utilities import ResourceType
+from ._utilities import YesNoDefault
 from ._version import __author__
 from ._version import __copyright__
 from ._version import __email__
@@ -50,20 +51,21 @@ __all__ = [
     "AbstractGenerator",
     "build_namespace_tree",
     "CodeGenerator",
-    "DSDLCodeGenerator",
-    "generate_types",
-    "generate_all",
-    "LanguageConfig",
     "DefaultValue",
+    "DSDLCodeGenerator",
+    "generate_all",
+    "generate_types",
+    "InternalError",
     "Language",
+    "LanguageConfig",
     "LanguageContext",
     "LanguageContextBuilder",
     "Namespace",
+    "ResourceType",
     "SupportGenerator",
     "TEMPLATE_SUFFIX",
     "UnsupportedLanguageError",
     "YesNoDefault",
-    "InternalError",
     "__author__",
     "__copyright__",
     "__email__",

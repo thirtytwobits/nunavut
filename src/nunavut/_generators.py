@@ -11,16 +11,17 @@ pydsdl AST into source code.
 
 import abc
 import itertools
+import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Type, Union
+from typing import Any, Iterable, Mapping, Optional, Type, Union, cast
 
 from pydsdl import CompositeType
 from pydsdl import read_files as read_dsdl_files
 from pydsdl import read_namespace as read_dsdl_namespace
 
 from nunavut._namespace import Namespace, build_namespace_tree
-from nunavut._utilities import YesNoDefault, ResourceType
+from nunavut._utilities import ResourceType, YesNoDefault
 from nunavut.lang import LanguageContext, LanguageContextBuilder
 from nunavut.lang._language import Language
 
@@ -85,10 +86,12 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
     def __init__(
         self,
         namespace: Namespace,
+        resource_types: int,
         generate_namespace_types: YesNoDefault = YesNoDefault.DEFAULT,
         **kwargs: Any,
     ):  # pylint: disable=unused-argument
         self._namespace = namespace
+        self._resource_types = resource_types
         if generate_namespace_types == YesNoDefault.YES:
             self._generate_namespace_types = True
         elif generate_namespace_types == YesNoDefault.NO:
@@ -106,6 +109,13 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         The root :class:`nunavut.Namespace` for this generator.
         """
         return self._namespace
+
+    @property
+    def resource_types(self) -> int:
+        """
+        The bitmask of resources to generate. This can be a combination of ResourceType values.
+        """
+        return self._resource_types
 
     @property
     def generate_namespace_types(self) -> bool:
@@ -129,7 +139,6 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         self,
         is_dryrun: bool = False,
         allow_overwrite: bool = True,
-        omit_serialization_support: bool = False,
         embed_auditing_info: bool = False,
     ) -> Iterable[Path]:
         """
@@ -141,8 +150,6 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         :param bool allow_overwrite: If True then the generator will attempt to overwrite any existing files
                                 it encounters. If False then the generator will raise an error if the
                                 output file exists and the generation is not a dry-run.
-        :param bool omit_serialization_support: If True then the generator will emit only types without additional
-                                serialization and deserialization support and logic.
         :param embed_auditing_info: If True then additional information about the inputs and environment used to
                                 generate source will be embedded in the generated files at the cost of build
                                 reproducibility.
@@ -234,24 +241,22 @@ def generate_types(
 
     from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
 
-    generator = DSDLCodeGenerator(namespace)
-    support_resource_types = (
-        ResourceType.ANY.value if not omit_serialization_support else ~ResourceType.SERIALIZATION_SUPPORT.value
+    resource_types = (
+        ResourceType.ANY.value
+        if not omit_serialization_support
+        else (ResourceType.ANY.value & ~ResourceType.SERIALIZATION_SUPPORT.value)
     )
-    support_generator = SupportGenerator(support_resource_types, namespace)
+    generator = DSDLCodeGenerator(namespace, resource_types)
+    support_generator = SupportGenerator(namespace, resource_types)
 
     template_files = list(support_generator.get_templates())
-    generated_files = list(
-        support_generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
-    )
+    generated_files = list(support_generator.generate_all(is_dryrun, allow_overwrite, embed_auditing_info))
 
     template_files += list(generator.get_templates())
-    generated_files += list(
-        generator.generate_all(is_dryrun, allow_overwrite, omit_serialization_support, embed_auditing_info)
-    )
+    generated_files += list(generator.generate_all(is_dryrun, allow_overwrite, embed_auditing_info))
     return GenerationResult(
         language_context,
-        [(ct.source_file_path_to_root, ct.source_file_path) for ct in type_map],
+        [DSDLFilePath(ct.source_file_path_to_root, ct.source_file_path) for ct in type_map],
         [],
         generated_files,
         template_files,
@@ -264,9 +269,7 @@ def generate_all(
     target_files: Iterable[Union[str, Path]],
     root_namespace_directories_or_names: Iterable[Union[str, Path]],
     outdir: Path,
-    should_generate_code: bool = True,
-    should_generate_support: bool = True,
-    omit_serialization_support: bool = False,
+    resource_types: int = ResourceType.ANY.value,
     dry_run: bool = False,
     no_overwrite: bool = False,
     allow_unregulated_fixed_port_id: bool = False,
@@ -312,13 +315,11 @@ def generate_all(
 
     :param Path outdir:
         The path to generate code at and under.
-    :param bool should_generate_code:
-        If True then the generator will emit code for the types provided in `target_files`.
-    :param bool should_generate_support:
-        If True then the generator will emit additional support code in addition to the types themselves.
-    :param bool omit_serialization_support:
-        If True then data types will be generated without serialization routines. Setting this allows for generation of
-        Plain-Old-Datatypes (POD) from DSDL files.
+    :param int resource_types:
+        Bitmask of resources to generate. This can be a combination of ResourceType values. For example, to generate
+        only serialization support code, set this to ResourceType.SERIALIZATION_SUPPORT.value. To generate all resources
+        set this to ResourceType.ANY.value. To only generate resource files (i.e. to omit source code generation) set
+        the ResourceType.ONLY.value bit and the resource type bytes you do want to generate.
     :param bool dry_run:
         If True then no files will be generated/written but all logic will be exercised with commensurate logging and
         errors.
@@ -346,60 +347,72 @@ def generate_all(
     :returns GenerationResult: A dataclass containing lists of target files, dependent files, and generated files
         (i.e explicit inputs, discovered inputs, and determined outputs).
     """
-    language_context = (
-        LanguageContextBuilder(include_experimental_languages=include_experimental_languages)
-        .set_target_language(target_language)
-        .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, language_options)
-        .create()
-    )
-
-    target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
-        target_files,
-        root_namespace_directories_or_names,
-        allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
-    )
-
-    dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
-    for dsdl_file in itertools.chain(target_dsdl_files, dependent_dsdl_files):
-        root_path = dsdl_file.source_file_path_to_root
-        dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
-
     generated_files: set[Path] = set()
     template_files: set[Path] = set()
-    support_resource_types = (
-        ResourceType.ANY.value if not omit_serialization_support else ~ResourceType.SERIALIZATION_SUPPORT.value
-    )
-    for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
-        namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(outdir), language_context)
+    # translate the support_templates_dir argument to templates_dir for creating the support generator
+    support_kwargs = kwargs.copy()
+    support_kwargs["templates_dir"] = kwargs.get("support_templates_dir", [])
 
-        if code_generator_type is None:
-            from nunavut.jinja import DSDLCodeGenerator  # pylint: disable=import-outside-toplevel
-
-            code_generator_type = DSDLCodeGenerator
-
+    if resource_types & ResourceType.ANY.value:
         if support_generator_type is None:
             from nunavut.jinja import SupportGenerator  # pylint: disable=import-outside-toplevel
 
-            support_generator_type = SupportGenerator
+            support_generator_type_resolved = cast(type[AbstractGenerator], SupportGenerator)
+        else:
+            support_generator_type_resolved = support_generator_type
+    else:
+        support_generator_type_resolved = None
 
-        generator = code_generator_type(namespace, generate_namespace_types=generate_namespace_types, **kwargs)
-        support_generator = support_generator_type(
-            support_resource_types, namespace, generate_namespace_types=generate_namespace_types, **kwargs
+    if not resource_types & ResourceType.ONLY.value:
+        if code_generator_type is None:
+            from nunavut.jinja import DSDLCodeGenerator  # pylint: disable=import-outside-toplevel
+
+            code_generator_type_resolved = cast(type[AbstractGenerator], DSDLCodeGenerator)
+        else:
+            code_generator_type_resolved = code_generator_type
+    else:
+        code_generator_type_resolved = None
+
+    if code_generator_type_resolved is None and support_generator_type_resolved is None:
+        logging.warning(
+            "No resource types selected for generation and code generation was disabled. Nothing to do. This was a "
+            "useless call to generate_all()."
+        )
+    else:
+        language_context = (
+            LanguageContextBuilder(include_experimental_languages=include_experimental_languages)
+            .set_target_language(target_language)
+            .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, language_options)
+            .create()
         )
 
-        if should_generate_support:
-            template_files.update(support_generator.get_templates())
-            generated_files.update(
-                support_generator.generate_all(
-                    dry_run, not no_overwrite, omit_serialization_support, embed_auditing_info
-                )
-            )
+        target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
+            target_files,
+            root_namespace_directories_or_names,
+            allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
+        )
 
-        if should_generate_code:
-            template_files.update(generator.get_templates())
-            generated_files.update(
-                generator.generate_all(dry_run, not no_overwrite, omit_serialization_support, embed_auditing_info)
-            )
+        dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
+        for dsdl_file in itertools.chain(target_dsdl_files, dependent_dsdl_files):
+            root_path = dsdl_file.source_file_path_to_root
+            dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
+
+        for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
+            namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(outdir), language_context)
+
+            if support_generator_type_resolved is not None:
+                support_generator = support_generator_type_resolved(
+                    namespace, resource_types, generate_namespace_types=generate_namespace_types, **support_kwargs
+                )
+                template_files.update(support_generator.get_templates())
+                generated_files.update(support_generator.generate_all(dry_run, not no_overwrite, embed_auditing_info))
+
+            if code_generator_type_resolved is not None:
+                generator = code_generator_type_resolved(
+                    namespace, generate_namespace_types=generate_namespace_types, **kwargs
+                )
+                template_files.update(generator.get_templates())
+                generated_files.update(generator.generate_all(dry_run, not no_overwrite, embed_auditing_info))
 
     return GenerationResult(
         language_context,

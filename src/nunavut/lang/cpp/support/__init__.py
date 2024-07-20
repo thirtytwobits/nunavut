@@ -39,11 +39,6 @@ def list_support_files(resource_type: int = ResourceType.ANY.value) -> typing.Ge
         assert support_file_count > 0
 
         support_file_count = 0
-        for path in list_support_files(ResourceType.CONFIGURATION.value):
-            support_file_count +=1
-        assert support_file_count == 0
-
-        support_file_count = 0
         for path in list_support_files(ResourceType.SERIALIZATION_SUPPORT.value):
             support_file_count +=1
         assert support_file_count > 0

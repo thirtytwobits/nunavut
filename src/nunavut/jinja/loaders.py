@@ -76,7 +76,7 @@ class DSDLTemplateLoader(BaseLoader):
                     raise ValueError(f"Templates directory {str(templates_dir_item)} did not exist?")
             logger.info("Loading templates from file system at %s", templates_dirs)
             self._fs_loader = FileSystemLoader(
-                (str(d) for d in templates_dirs), followlinks=followlinks, encoding=encoding
+                list(str(d) for d in templates_dirs), followlinks=followlinks, encoding=encoding
             )
         else:
             self._fs_loader = None
@@ -303,8 +303,8 @@ class DSDLSupportTemplateLoader(DSDLTemplateLoader):
 
     def __init__(
         self,
-        resource_types: int,
         namespace: NunavutNamespace,
+        resource_types: int,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -362,7 +362,7 @@ class DSDLSupportTemplateLoader(DSDLTemplateLoader):
             namespace = MagicMock()
             namespace.get_language_context.return_value = lctx
 
-            template_loaders = DSDLSupportTemplateLoader(ResourceType.SERIALIZATION_SUPPORT.value, namespace)
+            template_loaders = DSDLSupportTemplateLoader(namespace, ResourceType.SERIALIZATION_SUPPORT.value)
 
             templates = template_loaders.list_templates()
 
@@ -401,7 +401,7 @@ class DSDLSupportTemplateLoader(DSDLTemplateLoader):
             namespace = MagicMock()
             namespace.get_language_context.return_value = lctx
 
-            template_loaders = DSDLSupportTemplateLoader(ResourceType.SERIALIZATION_SUPPORT.value, namespace)
+            template_loaders = DSDLSupportTemplateLoader(namespace, ResourceType.SERIALIZATION_SUPPORT.value)
 
             templates = template_loaders.get_templates()
 

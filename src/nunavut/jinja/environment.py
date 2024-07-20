@@ -15,9 +15,22 @@ import logging
 import platform
 import sys
 import types
-import typing
+from typing import (
+    AbstractSet,
+    Any,
+    Callable,
+    ItemsView,
+    KeysView,
+    Mapping,
+    Optional,
+    Tuple,
+    Union,
+    ValuesView,
+    cast,
+)
 
 from nunavut._templates import LanguageEnvironment
+from nunavut._utilities import ResourceType
 from nunavut.lang import Language, LanguageClassLoader, LanguageContext
 
 from .extensions import JinjaAssert, UseQuery
@@ -77,7 +90,7 @@ class LanguageTemplateNamespace:
 
     """
 
-    def __init__(self, **kwargs: typing.Any):
+    def __init__(self, **kwargs: Any):
         for name, value in kwargs.items():
             setattr(self, name, value)
 
@@ -94,10 +107,10 @@ class LanguageTemplateNamespace:
             arg_strings.append(f"**{repr(star_args)}")
         return f"{type_name}({','.join(arg_strings)})"
 
-    def _get_kwargs(self) -> typing.List[typing.Any]:
+    def _get_kwargs(self) -> list[Any]:
         return list(self.__dict__.items())
 
-    def __eq__(self, other: typing.Any) -> bool:
+    def __eq__(self, other: Any) -> bool:
         if not isinstance(other, LanguageTemplateNamespace):
             return NotImplemented
         return vars(self) == vars(other)
@@ -105,26 +118,26 @@ class LanguageTemplateNamespace:
     def __contains__(self, key: str) -> bool:
         return key in self.__dict__
 
-    def update(self, update_from: typing.Mapping[str, typing.Any]) -> None:
+    def update(self, update_from: Mapping[str, Any]) -> None:
         """
         update the namespace with the given values.
         """
         for key, value in update_from.items():
             setattr(self, key, value)
 
-    def items(self) -> typing.ItemsView[str, typing.Any]:
+    def items(self) -> ItemsView[str, Any]:
         """
         The items in the namespace.
         """
         return self.__dict__.items()
 
-    def keys(self) -> typing.KeysView[typing.Any]:
+    def keys(self) -> KeysView[Any]:
         """
         The values in the namespace.
         """
         return self.__dict__.keys()
 
-    def values(self) -> typing.ValuesView[typing.Any]:
+    def values(self) -> ValuesView[Any]:
         """
         The values in the namespace.
         """
@@ -149,9 +162,9 @@ class CodeGenEnvironmentBuilder:
         self._lctx = lctx
         self._trim_blocks = False
         self._lstrip_blocks = False
-        self._additional_filters: typing.Optional[typing.Dict[str, typing.Callable]] = None
-        self._additional_tests: typing.Optional[typing.Dict[str, typing.Callable]] = None
-        self._additional_globals: typing.Optional[typing.Dict[str, typing.Any]] = None
+        self._additional_filters: Optional[dict[str, Callable]] = None
+        self._additional_tests: Optional[dict[str, Callable]] = None
+        self._additional_globals: Optional[dict[str, Any]] = None
         self._extensions = self.DEFAULT_JINJA_EXTENSIONS[:]
         self._allow_filter_test_or_use_query_overwrite = False
 
@@ -197,11 +210,11 @@ class CodeGenEnvironmentBuilder:
         self._lstrip_blocks = lstrip_blocks
         return self
 
-    def add_filters(self, **additional_filters: typing.Callable) -> "CodeGenEnvironmentBuilder":
+    def add_filters(self, **additional_filters: Callable) -> "CodeGenEnvironmentBuilder":
         """
         Add filters to the created environment.
 
-        :param typing.Dict[str, typing.Callable] additional_filters: The additional filters.
+        :param dict[str, Callable] additional_filters: The additional filters.
         :return: The CodeGenEnvironmentBuilder object.
         :rtype: CodeGenEnvironmentBuilder
         """
@@ -211,11 +224,11 @@ class CodeGenEnvironmentBuilder:
             self._additional_filters.update(additional_filters)
         return self
 
-    def add_tests(self, **additional_tests: typing.Callable) -> "CodeGenEnvironmentBuilder":
+    def add_tests(self, **additional_tests: Callable) -> "CodeGenEnvironmentBuilder":
         """
         Add tests to the created environment.
 
-        :param typing.Dict[str, typing.Callable] additional_tests: The additional tests.
+        :param dict[str, Callable] additional_tests: The additional tests.
         :return: The CodeGenEnvironmentBuilder object.
         :rtype: CodeGenEnvironmentBuilder
         """
@@ -225,11 +238,11 @@ class CodeGenEnvironmentBuilder:
             self._additional_tests.update(additional_tests)
         return self
 
-    def add_globals(self, **additional_globals: typing.Any) -> "CodeGenEnvironmentBuilder":
+    def add_globals(self, **additional_globals: Any) -> "CodeGenEnvironmentBuilder":
         """
         Add globals so the created environment.
 
-        :param typing.Dict[str, typing.Any] additional_globals: The additional globals.
+        :param dict[str, Any] additional_globals: The additional globals.
         :return: The CodeGenEnvironmentBuilder object.
         :rtype: CodeGenEnvironmentBuilder
         """
@@ -243,7 +256,7 @@ class CodeGenEnvironmentBuilder:
         """
         Set the extensions.
 
-        :param typing.List[Extension] extensions: The extensions.
+        :param list[Extension] extensions: The extensions.
         :return: The CodeGenEnvironmentBuilder object.
         :rtype: CodeGenEnvironmentBuilder
         """
@@ -389,10 +402,10 @@ class CodeGenEnvironment(Environment):
         lctx: LanguageContext,
         trim_blocks: bool,
         lstrip_blocks: bool,
-        additional_filters: typing.Optional[typing.Dict[str, typing.Callable]],
-        additional_tests: typing.Optional[typing.Dict[str, typing.Callable]],
-        additional_globals: typing.Optional[typing.Dict[str, typing.Any]],
-        extensions: typing.Optional[typing.List[Extension]],
+        additional_filters: Optional[dict[str, Callable]],
+        additional_tests: Optional[dict[str, Callable]],
+        additional_globals: Optional[dict[str, Any]],
+        extensions: Optional[list[Extension]],
         allow_filter_test_or_use_query_overwrite: bool,
     ):  # pylint: disable=too-many-arguments
         super().__init__(
@@ -429,9 +442,7 @@ class CodeGenEnvironment(Environment):
 
         self._update_language_support(lctx)
 
-        supported_languages = (
-            lctx.get_supported_languages().values()
-        )  # type: typing.Optional[typing.ValuesView[Language]]
+        supported_languages = lctx.get_supported_languages().values()  # type: Optional[ValuesView[Language]]
 
         self.update_nunavut_globals()
 
@@ -444,7 +455,7 @@ class CodeGenEnvironment(Environment):
         if additional_tests is not None:
             self._add_each_to_environment(additional_tests.items(), self.tests, supported_languages=supported_languages)
 
-    def add_conventional_methods_to_environment(self, obj: typing.Any) -> None:
+    def add_conventional_methods_to_environment(self, obj: Any) -> None:
         """
         Adds methods using specific naming conventions to the Jinja environment. For example, methods named `filter_*`
         are added to the Jinja environment as filters.
@@ -452,7 +463,7 @@ class CodeGenEnvironment(Environment):
         This method iterates over the methods of the given object and adds them to the Jinja environment.
         Only methods that are supported by the specified languages are added.
 
-        :param typing.Any obj: The object to add the methods from.
+        :param Any obj: The object to add the methods from.
 
         """
         for name, method in inspect.getmembers(obj, inspect.isroutine):
@@ -464,9 +475,8 @@ class CodeGenEnvironment(Environment):
     def update_nunavut_globals(
         self,
         support_namespace: str = "",
-        support_version: typing.Tuple[int, int, int] = (0, 0, 0),
-        support_module: typing.Optional["types.ModuleType"] = None,  # pylint: disable=unused-argument
-        omit_serialization_support: bool = False,
+        support_version: Tuple[int, int, int] = (0, 0, 0),
+        resource_types: int = ResourceType.ANY.value,
         embed_auditing_info: bool = False,
     ) -> None:
         """
@@ -475,19 +485,30 @@ class CodeGenEnvironment(Environment):
                                             `nunavut.support.namespace` in templates.
         :param support_version:             The version to report for supporting code. Available as
                                             `nunavut.support.version` in templates.
-        :param support_module:              The python module containing support for the selected language.
-        :param omit_serialization_support:  Boolean flag set on the support object. Available as
-                                            `nunavut.support.omit_serialization_support` in templates.
+        :param resource_types:              Bitmask of resource types set for the target language.
         :param embed_auditing_info:         Boolean flag available as `nunavut.embed_auditing_info` in templates.
         """
         nunavut_namespace = self.nunavut_global
         setattr(nunavut_namespace, "embed_auditing_info", embed_auditing_info)
         setattr(nunavut_namespace, "platform_version", self._create_platform_version(embed_auditing_info))
 
+        omit_serialization = (resource_types & ResourceType.SERIALIZATION_SUPPORT.value) != 0
+
         setattr(
             nunavut_namespace,
             "support",
-            {"omit": omit_serialization_support, "namespace": support_namespace, "version": support_version},
+            {"omit": omit_serialization, "namespace": support_namespace, "version": support_version},
+        )
+
+        # Jinja doesn't support bitmasks so we split the resource types into separate properties.
+        setattr(
+            nunavut_namespace,
+            "resource_types",
+            {
+                "bitmask": resource_types,
+                "serialization_support": omit_serialization,
+                "type_support": resource_types & ResourceType.TYPE_SUPPORT.value,
+            },
         )
 
         if "version" not in nunavut_namespace:
@@ -497,12 +518,12 @@ class CodeGenEnvironment(Environment):
             setattr(nunavut_namespace, "version", nunavut_version)
 
     @property
-    def supported_languages(self) -> typing.ValuesView[Language]:
+    def supported_languages(self) -> ValuesView[Language]:
         """
         The supported languages in the environment.
 
         :return: A view of the supported languages.
-        :rtype: typing.ValuesView[Language]
+        :rtype: ValuesView[Language]
         """
         ln_globals = self.globals["ln"]  # type: LanguageTemplateNamespace
         return ln_globals.values()
@@ -515,7 +536,7 @@ class CodeGenEnvironment(Environment):
         :return: The `nunavut` global namespace.
         :rtype: LanguageTemplateNamespace
         """
-        return typing.cast(LanguageTemplateNamespace, self.globals["nunavut"])
+        return cast(LanguageTemplateNamespace, self.globals["nunavut"])
 
     @property
     def target_language_uses_queries(self) -> LanguageTemplateNamespace:
@@ -525,7 +546,7 @@ class CodeGenEnvironment(Environment):
         :return: The uses queries for the target language.
         :rtype: LanguageTemplateNamespace
         """
-        return typing.cast(LanguageTemplateNamespace, self.globals["uses_queries"])
+        return cast(LanguageTemplateNamespace, self.globals["uses_queries"])
 
     @property
     def language_options(self) -> LanguageTemplateNamespace:
@@ -535,7 +556,7 @@ class CodeGenEnvironment(Environment):
         :return: The language options.
         :rtype: LanguageTemplateNamespace
         """
-        return typing.cast(LanguageTemplateNamespace, self.globals["options"])
+        return cast(LanguageTemplateNamespace, self.globals["options"])
 
     @property
     def language_support(self) -> LanguageTemplateNamespace:
@@ -545,7 +566,7 @@ class CodeGenEnvironment(Environment):
         :return: The language support.
         :rtype: LanguageTemplateNamespace
         """
-        return typing.cast(LanguageTemplateNamespace, self.globals["ln"])
+        return cast(LanguageTemplateNamespace, self.globals["ln"])
 
     @property
     def target_language(self) -> Language:
@@ -565,18 +586,18 @@ class CodeGenEnvironment(Environment):
         :return: The current UTC time.
         :rtype: datetime.datetime
         """
-        return typing.cast(datetime.datetime, self.globals["now_utc"])
+        return cast(datetime.datetime, self.globals["now_utc"])
 
     @now_utc.setter
     def now_utc(self, utc_time: datetime.datetime) -> None:
         self.globals["now_utc"] = utc_time
 
-    def add_test(self, test_name: str, test_callable: typing.Callable) -> None:
+    def add_test(self, test_name: str, test_callable: Callable) -> None:
         """
         Add a test to the environment.
 
         :param str test_name: The name of the test.
-        :param typing.Callable test_callable: The test.
+        :param Callable test_callable: The test.
         :return: None
         """
         self._add_to_environment(test_name, test_callable, self.tests)
@@ -586,10 +607,10 @@ class CodeGenEnvironment(Environment):
     # +----------------------------------------------------------------------------------------------------------------+
     def _resolve_collection(
         self,
-        conventional_method_prefix: typing.Optional[str],
+        conventional_method_prefix: Optional[str],
         method_name: str,
-        collection_maybe: typing.Optional[typing.Union[LanguageTemplateNamespace, typing.Dict[str, typing.Any]]],
-    ) -> typing.Union[LanguageTemplateNamespace, typing.Dict[str, typing.Any]]:
+        collection_maybe: Optional[Union[LanguageTemplateNamespace, dict[str, Any]]],
+    ) -> Union[LanguageTemplateNamespace, dict[str, Any]]:
         """
         Resolve the collection to add the item to. If collection_maybe is not None then it is returned otherwise the
         collection is resolved based on the method name.
@@ -598,12 +619,12 @@ class CodeGenEnvironment(Environment):
             return collection_maybe
 
         if LanguageEnvironment.is_test_name(conventional_method_prefix):
-            return typing.cast(typing.Dict[str, typing.Any], self.tests)
+            return cast(dict[str, Any], self.tests)
         if LanguageEnvironment.is_filter_name(conventional_method_prefix):
-            return typing.cast(typing.Dict[str, typing.Any], self.filters)
+            return cast(dict[str, Any], self.filters)
         if LanguageEnvironment.is_uses_query_name(conventional_method_prefix):
             uses_queries = self.globals["uses_queries"]
-            return typing.cast(LanguageTemplateNamespace, uses_queries)
+            return cast(LanguageTemplateNamespace, uses_queries)
         raise TypeError(
             f"Tried to add an item {method_name} to the template environment but we don't know what the item is."
         )
@@ -611,8 +632,8 @@ class CodeGenEnvironment(Environment):
     def _add_to_environment(
         self,
         item_name: str,
-        item: typing.Any,
-        collection: typing.Union[LanguageTemplateNamespace, typing.Dict[str, typing.Any]],
+        item: Any,
+        collection: Union[LanguageTemplateNamespace, dict[str, Any]],
     ) -> None:
         if item_name in collection:
             if not self._allow_replacements:
@@ -630,23 +651,23 @@ class CodeGenEnvironment(Environment):
 
     def _add_conventional_method_to_environment(
         self,
-        method: typing.Callable[..., bool],
+        method: Callable[..., bool],
         method_name: str,
-        collection_maybe: typing.Optional[typing.Union[LanguageTemplateNamespace, typing.Dict[str, typing.Any]]] = None,
-        supported_languages: typing.Optional[typing.ValuesView[Language]] = None,
-        method_language: typing.Optional[Language] = None,
+        collection_maybe: Optional[Union[LanguageTemplateNamespace, dict[str, Any]]] = None,
+        supported_languages: Optional[ValuesView[Language]] = None,
+        method_language: Optional[Language] = None,
         is_target: bool = False,
     ) -> None:
         """
         Add a method using specific naming conventions to the Jinja environment. For example, methods named `filter_*`
         are added to the Jinja environment as filters.
 
-        :param typing.Callable[..., bool] method: The named method.
+        :param Callable[..., bool] method: The named method.
         :param str method_name: The name of the callable to use in a template.
-        :param typing.Optional[typing.Union[LanguageTemplateNamespace, typing.Dict[str, typing.Any]]] collection_maybe:
+        :param Optional[Union[LanguageTemplateNamespace, dict[str, Any]]] collection_maybe:
             The collection to add the method to. If None then the collection is resolved based on the method name.
-        :param typing.Optional[typing.ValuesView[Language]] supported_languages: The supported languages.
-        :param typing.Optional[Language] method_language: The language of the method.
+        :param Optional[ValuesView[Language]] supported_languages: The supported languages.
+        :param Optional[Language] method_language: The language of the method.
         :param bool is_target: Whether the method is for the target language.
 
             .. invisible-code-block: python
@@ -688,15 +709,15 @@ class CodeGenEnvironment(Environment):
 
     def _add_each_to_environment(
         self,
-        items: typing.AbstractSet[typing.Tuple[str, typing.Callable]],
-        collection: typing.Optional[
-            typing.Union[
+        items: AbstractSet[Tuple[str, Callable]],
+        collection: Optional[
+            Union[
                 LanguageTemplateNamespace,
-                typing.Dict[str, typing.Any],
+                dict[str, Any],
             ]
         ] = None,
-        supported_languages: typing.Optional[typing.ValuesView[Language]] = None,
-        language: typing.Optional[Language] = None,
+        supported_languages: Optional[ValuesView[Language]] = None,
+        language: Optional[Language] = None,
         is_target: bool = False,
     ) -> None:
         for method_name, method in items:
@@ -705,9 +726,9 @@ class CodeGenEnvironment(Environment):
             )
 
     @classmethod
-    def _create_platform_version(cls, embed_auditing_info: bool) -> typing.Dict[str, typing.Any]:
+    def _create_platform_version(cls, embed_auditing_info: bool) -> dict[str, Any]:
 
-        platform_version = {}  # type: typing.Dict[str, typing.Any]
+        platform_version = {}  # type: dict[str, Any]
 
         platform_version["python_version"] = platform.python_version()
         if embed_auditing_info:

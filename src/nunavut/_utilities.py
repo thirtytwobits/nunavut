@@ -162,7 +162,7 @@ class QuaternaryLogic(enum.Enum):
     """
 
     @classmethod
-    def from_en_us(cls, en_us_word: any) -> "QuaternaryLogic":
+    def from_en_us(cls, en_us_word: Any) -> "QuaternaryLogic":
         """
         Convert an English words for "always false, always true, true if, and true unless" to a quaternary logic
         value.
@@ -179,12 +179,12 @@ class QuaternaryLogic(enum.Enum):
         lcw = str(en_us_word).lower()
         if lcw in ("always_false", "always-false", "never", "no", "false", "0"):
             return cls.ALWAYS_FALSE
-        if lcw in ("true_if", "true-if", "as-needed", "if-needed", "yes", "", "default", "None", "true", "1"):
+        if lcw in ("true_if", "true-if", "as-needed", "if-needed", "yes", "", "default", "none", "true", "1"):
             return cls.TRUE_IF
         if lcw in ("true_unless", "true-unless", "only"):
             return cls.TRUE_UNLESS
         if lcw in ("always_true", "always-true", "always"):
-            return "ALWAYS_TRUE"
+            return cls.ALWAYS_TRUE
         raise ValueError(f"Unknown value '{en_us_word}'")
 
     ALWAYS_FALSE = 0
@@ -210,14 +210,19 @@ class QuaternaryLogic(enum.Enum):
 @enum.unique
 class ResourceType(enum.Enum):
     """
-    Common Nunavut classifications for Python package resources.
+    Standard Nunavut classifications for Python package resources.
     """
 
     NONE = 0
-    CONFIGURATION = 1
-    SERIALIZATION_SUPPORT = 2
-    TYPE_SUPPORT = 4
-    ANY = 0xFF
+    """ No resources specified."""
+    SERIALIZATION_SUPPORT = 0x1
+    """Serialization support files."""
+    TYPE_SUPPORT = 0x2
+    """Type support files."""
+    ONLY = 0x80000000
+    """Only the specified resources."""
+    ANY = 0x3
+    """Any resources."""
 
 
 @enum.unique

@@ -148,11 +148,6 @@ class LegacyArgparseRunner(Runner):
         root_path = self._args.target_files[0]
         code_generator, support_generator = self._create_generators_for_root(lctx, root_path)
 
-        if not self._args.should_generate_support:
-            support_generator = None
-        if not self._args.should_generate_code:
-            code_generator = None
-
         if self._args.list_outputs:
             self._list_outputs_only(code_generator, support_generator)
 
@@ -168,8 +163,11 @@ class LegacyArgparseRunner(Runner):
 
     def _create_generators_for_root(
         self, lctx: LanguageContext, root_namespace_path: Path
-    ) -> Tuple[Generator, Generator]:
-        if self._args.should_generate_code and not self._args.list_configuration:
+    ) -> Tuple[Optional[Generator], Optional[Generator]]:
+
+        should_create_codegen = (self._args.resource_types & ResourceType.ONLY.value) == 0
+        should_create_supportgen = (self._args.resource_types & ResourceType.ANY.value) != 0
+        if should_create_codegen and not self._args.list_configuration:
             type_map = read_dsdl_namespace(
                 root_namespace_path,
                 self._args.root_namespace_directories_or_names,
@@ -192,32 +190,38 @@ class LegacyArgparseRunner(Runner):
 
         from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
 
-        support_resource_types = (
-            ResourceType.ANY.value
-            if not self._args.omit_serialization_support
-            else ResourceType.ANY.value & ~ResourceType.SERIALIZATION_SUPPORT.value
+        code_generator = (
+            None
+            if not should_create_codegen
+            else DSDLCodeGenerator(
+                root_namespace,
+                resource_types=self._args.resource_types,
+                templates_dir=self._args.templates_dir,
+                **generator_args
+            )
         )
-        return (
-            DSDLCodeGenerator(root_namespace, templates_dir=self._args.templates_dir, **generator_args),
-            SupportGenerator(
-                support_resource_types, root_namespace, templates_dir=self._args.support_templates_dir, **generator_args
-            ),
+        support_generator = (
+            None
+            if not should_create_supportgen
+            else SupportGenerator(
+                root_namespace,
+                resource_types=self._args.resource_types,
+                templates_dir=self._args.support_templates_dir,
+                **generator_args
+            )
         )
+        return (code_generator, support_generator)
 
     def _list_outputs_only(self, code_generator: Optional[Generator], support_generator: Optional[Generator]) -> None:
         if code_generator is not None:
             self.stdout_lister(
-                code_generator.generate_all(
-                    is_dryrun=True, omit_serialization_support=self._args.omit_serialization_support
-                ),
+                code_generator.generate_all(is_dryrun=True),
                 str,
             )
 
         if support_generator is not None:
             self.stdout_lister(
-                support_generator.generate_all(
-                    is_dryrun=True, omit_serialization_support=self._args.omit_serialization_support
-                ),
+                support_generator.generate_all(is_dryrun=True),
                 str,
             )
 
@@ -251,7 +255,6 @@ class LegacyArgparseRunner(Runner):
             support_generator.generate_all(
                 is_dryrun=self._args.dry_run,
                 allow_overwrite=not self._args.no_overwrite,
-                omit_serialization_support=self._args.omit_serialization_support,
                 embed_auditing_info=self._args.embed_auditing_info,
             )
 
@@ -259,7 +262,6 @@ class LegacyArgparseRunner(Runner):
             code_generator.generate_all(
                 is_dryrun=self._args.dry_run,
                 allow_overwrite=not self._args.no_overwrite,
-                omit_serialization_support=self._args.omit_serialization_support,
                 embed_auditing_info=self._args.embed_auditing_info,
             )
 

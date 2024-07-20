@@ -22,7 +22,7 @@ from nunavut._postprocessors import (
     SetFileMode,
     TrimTrailingWhitespace,
 )
-from nunavut._utilities import DefaultValue, QuaternaryLogic, YesNoDefault
+from nunavut._utilities import DefaultValue, ResourceType, QuaternaryLogic, YesNoDefault
 
 
 class NunavutArgumentParser(argparse.ArgumentParser):
@@ -45,11 +45,8 @@ class NunavutArgumentParser(argparse.ArgumentParser):
     - **language_options**
         A dictionary of options to pass to a language context builder.
 
-    - **should_generate_support**
-        True if support files should be generated.
-
-    - **should_generate_code**
-        True if code files should be generated.
+    - **resource_types**
+        Bitmask of ResourceType values to generate based on omit_serialization_support and generate_support arguments.
 
     - **legacy_mode**
         A boolean indicating if the provided arguments use the single root path mode which is the
@@ -62,7 +59,10 @@ class NunavutArgumentParser(argparse.ArgumentParser):
     -----------------
 
     - **generate_support**
-        The original argument is replaced with should_generate_support and  should_generate_code.
+        The original argument is replaced with resource_types bitmask.
+
+    - **omit_serialization_support**
+        The original argument is replaced with resource_types bitmask.
 
     - **target_files_or_root_namespace**
         The original argument is replaced with target_files and root_namespace_directories_or_names.
@@ -132,21 +132,8 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         if args.list_inputs:
             args.dry_run = True
 
-        # Add "should_generate_support" to the arguments.
-        generate_support = QuaternaryLogic.from_en_us(args.generate_support)
-        del args.generate_support
-        if generate_support is QuaternaryLogic.ALWAYS_FALSE:
-            args.should_generate_support = False
-        else:
-            args.should_generate_support = True
-
-        args.should_generate_code = generate_support != QuaternaryLogic.TRUE_UNLESS
-
-        if not args.should_generate_support and not args.should_generate_code:
-            self.error(
-                "Arguments resolved into a command to do nothing (does not generate code from types nor does the "
-                "command generate support code)."
-            )
+        # Convert omit_serialization_support and generate_support to resource_types bitmask.
+        args.resource_types = self._create_resource_types_bitmask(args)
 
         # Find all possible path specifications and combine into two collections: root_namespace_directories_or_names
         # and target_files.
@@ -162,7 +149,9 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         ):
             args.legacy_mode = True
             target_files = target_files.union(root_namespace_directories_or_names)
-            root_namespace_directories_or_names = ()
+            root_namespace_directories_or_names = []
+        else:
+            args.legacy_mode = False
 
         del args.target_files_or_root_namespace
 
@@ -319,7 +308,8 @@ class NunavutArgumentParser(argparse.ArgumentParser):
 
         return set(extra_includes)
 
-    def _create_language_options(self, args: argparse.Namespace) -> dict[str, Any]:
+    @classmethod
+    def _create_language_options(cls, args: argparse.Namespace) -> dict[str, Any]:
         """
         Group all language options into a dictionary.
         """
@@ -343,7 +333,8 @@ class NunavutArgumentParser(argparse.ArgumentParser):
 
         return language_options
 
-    def _create_post_processors(self, args: argparse.Namespace) -> list[PostProcessor]:
+    @classmethod
+    def _create_post_processors(cls, args: argparse.Namespace) -> list[PostProcessor]:
         """
         A, possibly empty, list of post processors to run based on provided arguments.
         """
@@ -375,3 +366,60 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         post_processors.append(SetFileMode(args.file_mode))
 
         return post_processors
+
+    @classmethod
+    def _create_resource_types_bitmask(cls, args: argparse.Namespace) -> int:
+        """
+        Create a bitmask of ResourceType values based on the provided arguments.
+
+        :param args: The parsed arguments.
+
+        .. invisible-code-block: python
+
+            from nunavut.cli.parsers import NunavutArgumentParser, QuaternaryLogic, ResourceType
+
+            namespace = argparse.Namespace(
+                generate_support="only",
+                omit_serialization_support=False
+            )
+
+            resource_types = NunavutArgumentParser._create_resource_types_bitmask(namespace)
+
+            assert resource_types == (
+                ResourceType.ONLY.value | ResourceType.SERIALIZATION_SUPPORT.value | ResourceType.TYPE_SUPPORT.value
+            )
+            assert "generate_support" not in namespace
+            assert "omit_serialization_support" not in namespace
+
+            namespace = argparse.Namespace(
+                generate_support="never",
+                omit_serialization_support=True
+            )
+
+            resource_types = NunavutArgumentParser._create_resource_types_bitmask(namespace)
+
+            assert resource_types == (
+                ResourceType.NONE.value
+            )
+
+        """
+        generate_support = QuaternaryLogic.from_en_us(args.generate_support)
+        del args.generate_support
+
+        resource_types = ResourceType.ANY.value
+
+        if generate_support is QuaternaryLogic.ALWAYS_FALSE:
+            resource_types &= ~ResourceType.TYPE_SUPPORT.value
+            resource_types &= ~ResourceType.SERIALIZATION_SUPPORT.value
+
+
+        if generate_support is QuaternaryLogic.TRUE_UNLESS:
+            resource_types = (
+                ResourceType.ONLY.value | ResourceType.SERIALIZATION_SUPPORT.value | ResourceType.TYPE_SUPPORT.value
+            )
+
+        if args.omit_serialization_support:
+            resource_types &= ~ResourceType.SERIALIZATION_SUPPORT.value
+
+        del args.omit_serialization_support
+        return resource_types

@@ -23,7 +23,7 @@ from nunavut._templates import (
     template_language_test,
     template_volatile_filter,
 )
-from nunavut._utilities import YesNoDefault, cached_property
+from nunavut._utilities import YesNoDefault, cached_property, ResourceType
 from nunavut.jinja.environment import Environment
 from nunavut.lang._common import IncludeGenerator, TokenEncoder, UniqueNameGenerator
 from nunavut.lang._language import Language as BaseLanguage
@@ -685,10 +685,10 @@ def filter_includes(
     :return: a list of include headers needed for a given type.
     """
     try:
-        omit_serialization_support = env.globals["nunavut"].support["omit"]
+        resource_types = int(env.globals["nunavut"].resource_types["bitmask"])
     except KeyError:
-        omit_serialization_support = False
-    return IncludeGenerator(language, t, omit_serialization_support).generate_include_filepart_list(
+        resource_types = ResourceType.ANY.value
+    return IncludeGenerator(language, t, resource_types).generate_include_filepart_list(
         language.extension, sort
     )
 
