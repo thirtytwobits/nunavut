@@ -476,7 +476,6 @@ class CodeGenEnvironment(Environment):
         self,
         support_namespace: str = "",
         support_version: Tuple[int, int, int] = (0, 0, 0),
-        resource_types: int = ResourceType.ANY.value,
         embed_auditing_info: bool = False,
     ) -> None:
         """
@@ -485,29 +484,21 @@ class CodeGenEnvironment(Environment):
                                             `nunavut.support.namespace` in templates.
         :param support_version:             The version to report for supporting code. Available as
                                             `nunavut.support.version` in templates.
-        :param resource_types:              Bitmask of resource types set for the target language.
         :param embed_auditing_info:         Boolean flag available as `nunavut.embed_auditing_info` in templates.
         """
         nunavut_namespace = self.nunavut_global
         setattr(nunavut_namespace, "embed_auditing_info", embed_auditing_info)
         setattr(nunavut_namespace, "platform_version", self._create_platform_version(embed_auditing_info))
 
-        omit_serialization = (resource_types & ResourceType.SERIALIZATION_SUPPORT.value) != 0
+        omit_serialization = self.target_language.get_config_value_as_bool("omit_serialization_support", False)
 
         setattr(
             nunavut_namespace,
             "support",
-            {"omit": omit_serialization, "namespace": support_namespace, "version": support_version},
-        )
-
-        # Jinja doesn't support bitmasks so we split the resource types into separate properties.
-        setattr(
-            nunavut_namespace,
-            "resource_types",
             {
-                "bitmask": resource_types,
-                "serialization_support": omit_serialization,
-                "type_support": resource_types & ResourceType.TYPE_SUPPORT.value,
+                "omit": omit_serialization,  # deprecated. Use "options.omit_serialization_support".
+                "namespace": support_namespace,
+                "version": support_version,
             },
         )
 

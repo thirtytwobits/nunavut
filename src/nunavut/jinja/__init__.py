@@ -788,7 +788,7 @@ class DSDLCodeGenerator(CodeGenerator):
     ) -> typing.Iterable[Path]:
         generated = []  # type: list[Path]
         # TODO: support_namespace and version?
-        self._env.update_nunavut_globals(resource_types=self.resource_types, embed_auditing_info=embed_auditing_info)
+        self._env.update_nunavut_globals(embed_auditing_info=embed_auditing_info)
         provider = self.namespace.get_all_types if self.generate_namespace_types else self.namespace.get_all_datatypes
         for parsed_type, output_path in provider():
             logger.info("Generating: %s", parsed_type)
@@ -923,7 +923,7 @@ class SupportGenerator(CodeGenerator):
     ) -> typing.Iterable[Path]:
         target_language = self.language_context.get_target_language()
         # TODO: support_namespace and version?
-        self._env.update_nunavut_globals(resource_types=self.resource_types, embed_auditing_info=embed_auditing_info)
+        self._env.update_nunavut_globals(embed_auditing_info=embed_auditing_info)
         target_path = Path(self.namespace.get_support_output_folder()) / self._sub_folders
 
         line_pps: list[LinePostProcessor] = []

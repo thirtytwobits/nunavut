@@ -61,9 +61,6 @@ class NunavutArgumentParser(argparse.ArgumentParser):
     - **generate_support**
         The original argument is replaced with resource_types bitmask.
 
-    - **omit_serialization_support**
-        The original argument is replaced with resource_types bitmask.
-
     - **target_files_or_root_namespace**
         The original argument is replaced with target_files and root_namespace_directories_or_names.
 
@@ -321,6 +318,10 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             True if args.omit_float_serialization_support else DefaultValue(False)
         )
 
+        language_options["omit_serialization_support"] = (
+            True if args.omit_serialization_support else DefaultValue(False)
+        )
+
         language_options["enable_serialization_asserts"] = (
             True if args.enable_serialization_asserts else DefaultValue(False)
         )
@@ -328,6 +329,7 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         language_options["enable_override_variable_array_capacity"] = (
             True if args.enable_override_variable_array_capacity else DefaultValue(False)
         )
+
         if args.language_standard is not None:
             language_options["std"] = args.language_standard
 
@@ -370,7 +372,9 @@ class NunavutArgumentParser(argparse.ArgumentParser):
     @classmethod
     def _create_resource_types_bitmask(cls, args: argparse.Namespace) -> int:
         """
-        Create a bitmask of ResourceType values based on the provided arguments.
+        Create a bitmask of ResourceType values based on the provided arguments. This method utilizes generate_support
+        and omit_serialization_support arguments to determine the bitmask. It also removes the generate_support argument
+        from the namespace.
 
         :param args: The parsed arguments.
 
@@ -389,7 +393,6 @@ class NunavutArgumentParser(argparse.ArgumentParser):
                 ResourceType.ONLY.value | ResourceType.SERIALIZATION_SUPPORT.value | ResourceType.TYPE_SUPPORT.value
             )
             assert "generate_support" not in namespace
-            assert "omit_serialization_support" not in namespace
 
             namespace = argparse.Namespace(
                 generate_support="never",
@@ -412,8 +415,7 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             resource_types &= ~ResourceType.TYPE_SUPPORT.value
             resource_types &= ~ResourceType.SERIALIZATION_SUPPORT.value
 
-
-        if generate_support is QuaternaryLogic.TRUE_UNLESS:
+        elif generate_support is QuaternaryLogic.TRUE_UNLESS:
             resource_types = (
                 ResourceType.ONLY.value | ResourceType.SERIALIZATION_SUPPORT.value | ResourceType.TYPE_SUPPORT.value
             )
@@ -421,5 +423,4 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         if args.omit_serialization_support:
             resource_types &= ~ResourceType.SERIALIZATION_SUPPORT.value
 
-        del args.omit_serialization_support
         return resource_types

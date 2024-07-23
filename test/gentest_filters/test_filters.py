@@ -209,21 +209,27 @@ def test_python_filter_imports_for_array_type(gen_paths, stropping, sort):  # ty
 
 
 @pytest.mark.parametrize("stropping,sort", [(True, False), (False, True)])
-def test_cpp_filter_includes(gen_paths, stropping, sort, mock_environment):  # type: ignore
+def test_cpp_filter_includes(gen_paths, stropping, sort):  # type: ignore
+    """
+    Test the include header generator for C++ jinja templates.
+    """
     lctx = (
         LanguageContextBuilder(include_experimental_languages=True)
         .set_target_language("cpp")
         .set_target_language_configuration_override(Language.WKCV_ENABLE_STROPPING, stropping)
         .set_target_language_configuration_override(Language.WKCV_DEFINITION_FILE_EXTENSION, ".h")
+        .set_target_language_configuration_override(
+            Language.WKCV_LANGUAGE_OPTIONS, {"omit_serialization_support": True}
+        )
         .create()
     )
 
     uavcan_dir = (gen_paths.dsdl_dir / pathlib.Path("uavcan")).as_posix()
     type_map = read_namespace((gen_paths.dsdl_dir / pathlib.Path("new")).as_posix(), [uavcan_dir])
-    from nunavut.lang.cpp import filter_includes
+    from nunavut.lang.cpp import filter_includes  # pylint: disable=import-outside-toplevel
 
     test_subject = next(filter(lambda type: (type.short_name == "hotness"), type_map))
-    imports = filter_includes(lctx.get_target_language(), mock_environment, test_subject, sort=sort)
+    imports = filter_includes(lctx.get_target_language(), test_subject, sort=sort)
     assert len(imports) == 6
 
     def assert_path_in_imports(path: str) -> None:
@@ -276,7 +282,10 @@ def test_cpp_filter_includes(gen_paths, stropping, sort, mock_environment):  # t
         )
 
 
-def test_filter_includes_cpp_vla(gen_paths, mock_environment):  # type: ignore
+def test_filter_includes_cpp_vla(gen_paths):  # type: ignore
+    """
+    Test the include header generator for C++ jinja templates when using the vla.
+    """
     lctx = (
         LanguageContextBuilder(include_experimental_languages=True)
         .set_target_language("cpp")
@@ -284,10 +293,10 @@ def test_filter_includes_cpp_vla(gen_paths, mock_environment):  # type: ignore
         .create()
     )
     type_map = read_namespace((gen_paths.dsdl_dir / pathlib.Path("vla")).as_posix())
-    from nunavut.lang.cpp import filter_includes
+    from nunavut.lang.cpp import filter_includes # pylint: disable=import-outside-toplevel
 
     test_subject = next(filter(lambda type: (type.short_name == "uses_vla"), type_map))
-    imports = filter_includes(lctx.get_target_language(), mock_environment, test_subject)
+    imports = filter_includes(lctx.get_target_language(), test_subject)
     assert "<vector>" in imports
 
 

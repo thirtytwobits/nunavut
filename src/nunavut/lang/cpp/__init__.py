@@ -1016,9 +1016,8 @@ def filter_short_reference_name(language: Language, t: pydsdl.CompositeType) -> 
 
 
 @template_language_list_filter(__name__)
-@template_environment_list_filter
 def filter_includes(
-    language: Language, env: Environment, t: pydsdl.CompositeType, sort: bool = True
+    language: Language, t: pydsdl.CompositeType, sort: bool = True
 ) -> typing.List[str]:
     """
     Returns a list of all include paths for a given type.
@@ -1062,17 +1061,15 @@ def filter_includes(
             LanguageContextBuilder(include_experimental_languages=True)
                 .set_target_language("cpp")
                 .set_target_language_configuration_override("use_standard_types", False)
+                .set_target_language_configuration_override(
+                    Language.WKCV_LANGUAGE_OPTIONS,
+                    {"omit_serialization_support": True}
+                )
                 .create()
         )
         jinja_filter_tester(filter_includes, template, rendered, lctx, my_type=my_type)
     """
-    try:
-        resource_types = int(env.globals["nunavut"].resource_types["bitmask"])
-    except KeyError:
-        resource_types = ResourceType.ANY.value
-    return IncludeGenerator(language, t, resource_types).generate_include_filepart_list(
-        language.extension, sort
-    )
+    return IncludeGenerator(language, t).generate_include_filepart_list(language.extension, sort)
 
 
 @template_language_filter(__name__)

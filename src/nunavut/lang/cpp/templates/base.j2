@@ -12,7 +12,7 @@
 // build invocation (do not use --embed-auditing-info option to remove this comment).
 {%- endif %}
 //
-// Generator     : nunavut-{{ nunavut.version }} (serialization was {{ 'not ' * nunavut.support.omit }}enabled)
+// Generator     : nunavut-{{ nunavut.version }} (serialization was {{ 'not ' * options.omit_serialization_support }}enabled)
 {%- if nunavut.embed_auditing_info %}
 // Source file   : {{ T.source_file_path.as_posix() }}
 // Generated at  : {{ now_utc }} UTC
@@ -24,13 +24,9 @@
 // Full name     : {{ T.full_name }}
 // Type Version  : {{ T.version.major }}.{{ T.version.minor }}
 //
-// Support
-{%- if nunavut.support.omit %}
-//     (support file generation disabled)
-{%- else %}
+// Resource Generation
 //    Support Namespace : {{ nunavut.support.namespace }}
 //    Support Version   : {{ nunavut.support.version }}
-{%- endif %}
 //
 // Platform
 {{ nunavut.platform_version | text_table("//     ") }}
@@ -39,7 +35,7 @@
 {{ options | text_table("//     ") }}
 //
 // Uses Language Features
-//     Uses std_variant: {%- ifuses "std_variant" -%}yes{%- else -%}no{%- endifuses -%}
+//     Uses std_variant: {%- ifuses "std_variant" -%}yes{%- else -%}no{%- endifuses %}
 //
 {%- if T.deprecated and options.std | int < 14 %}
 {#- Courtesy http://patorjk.com/software/taag/#p=display&f=Big&t=DEPRECATED #}
@@ -64,7 +60,7 @@
 {%- endfor %}
 
 {{T.full_namespace | open_namespace}}
-{%- if not nunavut.support.omit %}{% for key, value in options.items() %}
+{%- if not options.omit_serialization_support %}{% for key, value in options.items() %}
 {% if loop.first -%}
 // +-------------------------------------------------------------------------------------------------------------------+
 // | LANGUAGE OPTION ASSERTIONS

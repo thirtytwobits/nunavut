@@ -337,8 +337,13 @@ def jinja_filter_tester(request: pytest.FixtureRequest) -> typing.Any:  # pylint
 
             jinja_filter_tester(filter_dummy, template, rendered, lctx, I=I)
     """
-    from nunavut.jinja.jinja2 import DictLoader  # pylint: disable=import-outside-toplevel
-    from nunavut.lang import LanguageContext, LanguageContextBuilder  # pylint: disable=import-outside-toplevel
+    # pylint: disable=import-outside-toplevel
+    from nunavut.jinja.jinja2 import DictLoader
+    from nunavut.lang import (
+        Language,
+        LanguageContext,
+        LanguageContextBuilder,
+    )
 
     def _make_filter_test_template(
         filter_or_list_of_filters: typing.Union[None, typing.Callable, typing.List[typing.Callable]],
@@ -347,15 +352,17 @@ def jinja_filter_tester(request: pytest.FixtureRequest) -> typing.Any:  # pylint
         target_language_or_language_context: typing.Union[str, LanguageContext],
         **additional_globals: typing.Optional[typing.Dict[str, typing.Any]],
     ) -> str:
-        from nunavut import ResourceType  # pylint: disable=import-outside-toplevel
-        from nunavut.jinja import CodeGenEnvironmentBuilder  # pylint: disable=import-outside-toplevel
+        from nunavut.jinja import CodeGenEnvironmentBuilder
 
         if isinstance(target_language_or_language_context, LanguageContext):
             lctx = target_language_or_language_context
         else:
+            # In unit tests we default to no serialization support.
+            overrides_data = {"omit_serialization_support": True}
             lctx = (
                 LanguageContextBuilder(include_experimental_languages=True)
                 .set_target_language(target_language_or_language_context)
+                .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, overrides_data)
                 .create()
             )
 
@@ -376,7 +383,6 @@ def jinja_filter_tester(request: pytest.FixtureRequest) -> typing.Any:  # pylint
             .create()
         )
         e.update_nunavut_globals(
-            resource_types=ResourceType.NONE.value,
             embed_auditing_info=True,
         )
 
@@ -401,8 +407,7 @@ def mock_environment(request: pytest.FixtureRequest) -> typing.Any:  # pylint: d
     magic_mock_environment = MagicMock()
     support_mock = MagicMock()
     magic_mock_environment.globals = {"nunavut": support_mock}
-    support_mock.support = {"omit": True}
-    support_mock.resource_types = {"bitmask": 0}
+    support_mock.support = {"serialization": False, "type": True, "bitmask": 0x2, "version": "0.0"}
 
     return magic_mock_environment
 
