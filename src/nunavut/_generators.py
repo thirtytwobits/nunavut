@@ -386,33 +386,54 @@ def generate_all(
             .create()
         )
 
-        target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
-            target_files,
-            root_namespace_directories_or_names,
-            allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
-        )
+        if len(target_files) > 0:
+            target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
+                target_files,
+                root_namespace_directories_or_names,
+                allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
+            )
 
-        dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
-        for dsdl_file in itertools.chain(target_dsdl_files, dependent_dsdl_files):
-            root_path = dsdl_file.source_file_path_to_root
-            dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
+            dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
 
-        for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
-            namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(outdir), language_context)
+            if not kwargs.get("omit_dependencies", False):
+                files_to_generate = itertools.chain(target_dsdl_files, dependent_dsdl_files)
+            else:
+                files_to_generate = target_dsdl_files
+
+            for dsdl_file in files_to_generate:
+                root_path = dsdl_file.source_file_path_to_root
+                dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
+
+            for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
+                namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(outdir), language_context)
+
+                if support_generator_type_resolved is not None:
+                    support_generator = support_generator_type_resolved(
+                        namespace, resource_types, generate_namespace_types=generate_namespace_types, **support_kwargs
+                    )
+                    template_files.update(support_generator.get_templates())
+                    generated_files.update(
+                        support_generator.generate_all(dry_run, not no_overwrite, embed_auditing_info)
+                    )
+
+                if code_generator_type_resolved is not None:
+                    generator = code_generator_type_resolved(
+                        namespace, generate_namespace_types=generate_namespace_types, **kwargs
+                    )
+                    template_files.update(generator.get_templates())
+                    generated_files.update(generator.generate_all(dry_run, not no_overwrite, embed_auditing_info))
+        else:
+            target_dsdl_files, dependent_dsdl_files = [], []
 
             if support_generator_type_resolved is not None:
+                namespace = build_namespace_tree([], "", str(outdir), language_context)
                 support_generator = support_generator_type_resolved(
                     namespace, resource_types, generate_namespace_types=generate_namespace_types, **support_kwargs
                 )
                 template_files.update(support_generator.get_templates())
                 generated_files.update(support_generator.generate_all(dry_run, not no_overwrite, embed_auditing_info))
-
-            if code_generator_type_resolved is not None:
-                generator = code_generator_type_resolved(
-                    namespace, generate_namespace_types=generate_namespace_types, **kwargs
-                )
-                template_files.update(generator.get_templates())
-                generated_files.update(generator.generate_all(dry_run, not no_overwrite, embed_auditing_info))
+            else:
+                logging.info("No target files provided and no support files would be generated. Nothing to do.")
 
     return GenerationResult(
         language_context,

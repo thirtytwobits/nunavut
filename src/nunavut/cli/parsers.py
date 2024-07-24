@@ -154,9 +154,6 @@ class NunavutArgumentParser(argparse.ArgumentParser):
 
         args.target_files = list(target_files)
 
-        if len(target_files) == 0:
-            self.error("No target files provided.")
-
         # ROOT PATHS
         lookup_paths = set(args.lookup_dir) if args.lookup_dir is not None else set()
         del args.lookup_dir
@@ -191,24 +188,26 @@ class NunavutArgumentParser(argparse.ArgumentParser):
                 [
                     "/one/to/root",
                     "/two/to/file.dsdl",
-                    "three/path:four/to/file.dsdl",
-                    "/five/path:six/to/file.dsdl",
-                    "seven/path\\:/eight/to/file.dsdl",
-                    "/five/path/:six/to/file.dsdl",
+                    "three/path/four:to/file.dsdl",
+                    "/five/path/six:to/file.dsdl",
+                    "seven/path/eight\\:to/file.dsdl",
+                    "/nine/path/ten/:to/file.dsdl",
                 ]
             )
             print(root_paths, target_files)
-            assert len(root_paths) == 3
-            assert len(target_files) == 4
+            assert len(root_paths) == 4
+            assert len(target_files) == 5
 
             assert Path("/one/to/root") in root_paths
-            assert Path("three/path") in root_paths
-            assert Path("/five/path") in root_paths
+            assert Path("three/path/four") in root_paths
+            assert Path("/five/path/six") in root_paths
+            assert Path("/nine/path/ten") in root_paths
 
             assert Path("/two/to/file.dsdl") in target_files
             assert Path("four/to/file.dsdl") in target_files
             assert Path("six/to/file.dsdl") in target_files
-            assert Path("seven/path\\:/eight/to/file.dsdl") in target_files
+            assert Path("seven/path/eight\\:to/file.dsdl") in target_files
+            assert Path("ten/to/file.dsdl") in target_files
 
             # Happy path: default root path
             default_root_paths, default_target_files = parser._parse_target_paths([""])
@@ -223,14 +222,6 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             assert len(single_target_file_root_paths) == 0
             assert len(single_target_file_target_files) == 1
             assert single_target_file_target_files.pop() == Path("/one/to/file.dsdl")
-
-            # errors: no inputs
-            with raises(SystemExit):
-                parser._parse_target_paths([])
-
-            # errors: no inputs
-            with raises(SystemExit):
-                parser._parse_target_paths(None)
 
             # errors: multiple colons
             with raises(SystemExit):
@@ -247,7 +238,8 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             if len(split_path) > 2:
                 self.error(f"Invalid lookup path (too many colons) > {lookup_dir}")
             if len(split_path) == 2:
-                return Path(split_path[0]), Path(split_path[1])
+                root_path = Path(split_path[0])
+                return root_path, Path(root_path.stem, split_path[1])
             elif (first_path := Path(split_path[0])).suffix in self.DSDL_FILE_SUFFIXES:
                 return None, first_path
             else:
@@ -269,8 +261,6 @@ class NunavutArgumentParser(argparse.ArgumentParser):
                     )
                 target_files.add(target_file_maybe)
 
-        if len(root_paths) == 0 and len(target_files) == 0:
-            self.error("No root paths provided.")
         return root_paths, target_files
 
     def _lookup_paths_from_environment(self, args: argparse.Namespace) -> set[Path]:

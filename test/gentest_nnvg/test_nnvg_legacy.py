@@ -104,8 +104,6 @@ def test_list_inputs(gen_paths: typing.Any, run_nnvg: typing.Callable, generate_
         / pathlib.Path("serialization").with_suffix(".j2")
     ]
 
-    # when #58 is fixed `(gen_paths.dsdl_dir / pathlib.Path('scotec') / pathlib.Path('Timer.1.0.dsdl')).as_posix()`
-    # should be added to this list.
     nnvg_args = [
         "--templates",
         gen_paths.templates_dir.as_posix(),
@@ -143,8 +141,6 @@ def test_list_inputs_w_namespaces(gen_paths: typing.Any, run_nnvg: typing.Callab
         ]
     )
 
-    # when #58 is fixed `(gen_paths.dsdl_dir / pathlib.Path('scotec') / pathlib.Path('Timer.1.0.dsdl')).as_posix()`
-    # and `(gen_paths.dsdl_dir / pathlib.Path('scotec').as_posix()` should be added to this list.
     nnvg_args = [
         "--templates",
         gen_paths.templates_dir.as_posix(),

@@ -76,34 +76,52 @@ def run_nnvg_main(request: pytest.FixtureRequest) -> typing.Callable:  # pylint:
         _: typing.Any,
         args: typing.List[str],
         env: typing.Optional[typing.Dict[str, str]] = None,
+        raise_argument_error: bool = False,
     ) -> subprocess.CompletedProcess:
         """
-        Helper to invoke the same nunavut main nnvg uses as a direct call
+        Helper to invoke the same nunavut main nnvg uses as a direct call. Except for the raise_argument_error argument,
+        this function is identical to run_nnvg but it does not use subprocess.
+
+        :param raise_argument_error: If True, this function will raise an ArgumentError if one is encountered as the
+                                        context or cause of a SystemExit exception.
+
+        :return: A synthetic subprocess.CompletedProcess object with the return code, stdout, and stderr.
         """
         from nunavut.cli.runners import main  # pylint: disable=import-outside-toplevel
+        from argparse import ArgumentError  # pylint: disable=import-outside-toplevel
 
         this_env = os.environ.copy()
         os.environ.update(env or {})
 
         args = [str(arg) for arg in args]
 
+        real_stdout = sys.stdout
+        real_stderr = sys.stderr
+        mock_stdout = StringIO()
+        mock_stderr = StringIO()
+        sys.stdout = mock_stdout
+        sys.stderr = mock_stderr
         try:
-            real_stdout = sys.stdout
-            real_stderr = sys.stderr
-            mock_stdout = StringIO()
-            mock_stderr = StringIO()
-            sys.stdout = mock_stdout
-            sys.stderr = mock_stderr
             return_code = main(args)
+        except SystemExit as e:
+            return_code = int(e.code) if e.code is not None else 0
+            if raise_argument_error:
+                if hasattr(e, "__context__") and isinstance(e.__context__, ArgumentError):
+                    raise e.__context__
+                if hasattr(e, "__cause__") and isinstance(e.__cause__, ArgumentError):
+                    raise e.__cause__
+        finally:
             sys.stdout = real_stdout
             sys.stderr = real_stderr
+            mock_stdout.flush()
+            mock_stderr.flush()
             stdout_buffer = mock_stdout.getvalue()
             stderr_buffer = mock_stderr.getvalue()
-            return subprocess.CompletedProcess(args, return_code, stdout_buffer.encode(), stderr_buffer.encode())
-        finally:
             os.environ.clear()
             for key, value in this_env.items():
                 os.environ[key] = value
+
+        return subprocess.CompletedProcess(args, return_code, stdout_buffer.encode(), stderr_buffer.encode())
 
     return _run_nnvg_main
 

@@ -78,7 +78,6 @@ def _make_parser(parser_type: ParserT) -> ParserT:
 
     parser.add_argument(
         "target_files_or_root_namespace",
-        default=".",
         nargs="*",
         help=textwrap.dedent(
             """
@@ -442,6 +441,21 @@ def _make_parser(parser_type: ParserT) -> ParserT:
     run_mode_group.add_argument("--version", action=_LazyVersionAction)
 
     run_mode_group.add_argument("--dry-run", "-d", action="store_true", help="If True then no files will be generated.")
+
+    run_mode_group.add_argument(
+        "--disable-legacy-mode",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+        Disables automatic handling of legacy CLI inputs. Target files will
+        be required to perform code generation.
+
+        Use of this option is not recommended. It is provided for diagnostic
+        purposes only.
+
+    """
+        ).lstrip(),
+    )
 
     run_mode_ex_group = run_mode_group.add_mutually_exclusive_group()
 
