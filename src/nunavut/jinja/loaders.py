@@ -13,12 +13,12 @@ import importlib
 import itertools
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple, Type, cast
+from typing import Any, Callable, Deque, Dict, Iterable, Mapping, Optional, Tuple, Type, cast
 
 import pydsdl
 
 from nunavut import Namespace as NunavutNamespace
-from nunavut._utilities import TEMPLATE_SUFFIX, ResourceSearchPolicy, ResourceType
+from nunavut._utilities import TEMPLATE_SUFFIX, ResourceSearchPolicy
 
 from .jinja2 import BaseLoader, Environment, FileSystemLoader, PackageLoader, TemplateNotFound
 
@@ -255,10 +255,12 @@ class DSDLTemplateLoader(BaseLoader):
     # +----------------------------------------------------------------------------------------------------------------+
     # | PRIVATE
     # +----------------------------------------------------------------------------------------------------------------+
-    _filter_template_list_by_suffix = functools.partial(filter, lambda x: Path(x).suffix == TEMPLATE_SUFFIX)
+    @classmethod
+    def _filter_template_list_by_suffix(cls, template_list: Iterable[str]) -> Iterable[str]:
+        return filter(lambda x: Path(x).suffix == TEMPLATE_SUFFIX, template_list)
 
     def _type_to_template_internal(self, value_type: Type, templates: Mapping[str, Path]) -> Optional[Path]:
-        search_queue = collections.deque()
+        search_queue: Deque[Type] = collections.deque()
         discovered = set()
         search_queue.appendleft(value_type)
         template_path = None

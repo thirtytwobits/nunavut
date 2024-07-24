@@ -207,6 +207,7 @@ class QuaternaryLogic(enum.Enum):
     True unless a condition is met. (1 XOR condition)
     """
 
+
 @enum.unique
 class ResourceType(enum.Enum):
     """

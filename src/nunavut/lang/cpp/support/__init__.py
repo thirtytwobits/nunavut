@@ -7,7 +7,6 @@
 Contains supporting C++ headers to distribute with generated types.
 """
 
-import itertools
 import pathlib
 import typing
 
@@ -53,10 +52,10 @@ def list_support_files(resource_type: int = ResourceType.ANY.value) -> typing.Ge
 
     # for now we say all .hpp resources are type support and all .j2 are serialization support.
     # We are allowed to change this logic anyway we want without breaking changes.
-    resource_types = []
-    if resource_type & ResourceType.SERIALIZATION_SUPPORT.value:
-        resource_types.append(iter_package_resources(__name__, ".j2"))
-    if resource_type & ResourceType.TYPE_SUPPORT.value:
-        resource_types.append(iter_package_resources(__name__, ".hpp"))
+    def support_generator() -> typing.Generator[pathlib.Path, None, None]:
+        if resource_type & ResourceType.SERIALIZATION_SUPPORT.value:
+            yield from iter_package_resources(__name__, ".j2")
+        if resource_type & ResourceType.TYPE_SUPPORT.value:
+            yield from iter_package_resources(__name__, ".hpp")
 
-    return itertools.chain(*resource_types)
+    return support_generator()

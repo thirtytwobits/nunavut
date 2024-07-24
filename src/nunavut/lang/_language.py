@@ -439,7 +439,7 @@ class Language(metaclass=abc.ABCMeta):
         if module is not None:
             # All language support modules must provide a list_support_files method
             # to allow the copy generator access to the packaged support files.
-            list_support_files: typing.Callable[[ResourceType], typing.Generator[pathlib.Path, None, None]] = getattr(
+            list_support_files: typing.Callable[[int], typing.Generator[pathlib.Path, None, None]] = getattr(
                 module, "list_support_files"
             )
             return list_support_files(resource_type)
@@ -447,8 +447,8 @@ class Language(metaclass=abc.ABCMeta):
             return empty_list_support_files()
 
     def get_option(
-        self, option_key: str, default_value: typing.Union[typing.Mapping[str, typing.Any], str, None] = None
-    ) -> typing.Union[typing.Mapping[str, typing.Any], str, None]:
+        self, option_key: str, default_value: typing.Union[typing.Mapping[str, typing.Any], str, bool, None] = None
+    ) -> typing.Union[typing.Mapping[str, typing.Any], str, bool, None]:
         """
         Get a language option for this language.
 

@@ -567,6 +567,8 @@ class CodeGenEnvironment(Environment):
         :return: The target language.
         :rtype: Language
         """
+        if self._target_language is None:
+            raise RuntimeError("No target language has been set.")
         return self._target_language
 
     @property
@@ -579,6 +581,10 @@ class CodeGenEnvironment(Environment):
         """
         return cast(datetime.datetime, self.globals["now_utc"])
 
+    @now_utc.setter
+    def now_utc(self, utc_time: datetime.datetime) -> None:
+        self.globals["now_utc"] = utc_time
+
     @property
     def embed_auditing_info(self) -> bool:
         """
@@ -588,10 +594,6 @@ class CodeGenEnvironment(Environment):
         :rtype: bool
         """
         return self._embed_auditing_info
-
-    @now_utc.setter
-    def now_utc(self, utc_time: datetime.datetime) -> None:
-        self.globals["now_utc"] = utc_time
 
     def add_test(self, test_name: str, test_callable: Callable) -> None:
         """

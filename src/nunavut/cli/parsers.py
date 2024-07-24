@@ -105,15 +105,13 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         return (parsed_args, argv)
 
     # --[ PRIVATE ]---------------------------------------------------------------------------------------------------
-    def _post_process_log(self, args: argparse.ArgumentParser, message: str) -> None:
+    def _post_process_log(self, args: argparse.Namespace, message: str) -> None:
         """
         Print a message to the log.
         """
         if args.verbose <= 0:
             return
-        if file is None:
-            file = sys.stdout
-        self._print_message(message, file)
+        self._print_message(message, sys.stdout)
 
     def _post_process_args(self, args: argparse.Namespace) -> None:
         """
@@ -146,7 +144,7 @@ class NunavutArgumentParser(argparse.ArgumentParser):
         ):
             args.legacy_mode = True
             target_files = target_files.union(root_namespace_directories_or_names)
-            root_namespace_directories_or_names = []
+            root_namespace_directories_or_names = set()
         else:
             args.legacy_mode = False
 
@@ -257,7 +255,8 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             if target_file_maybe is not None:
                 if root_dir is not None and target_file_maybe.is_absolute():
                     self.exit(
-                        f"Target file path cannot be absolute when using colon syntax > {root_dir}:{target_file_maybe}"
+                        1,
+                        f"Target file path cannot be absolute when using colon syntax > {root_dir}:{target_file_maybe}",
                     )
                 target_files.add(target_file_maybe)
 
@@ -274,7 +273,7 @@ class NunavutArgumentParser(argparse.ArgumentParser):
             except KeyError:
                 return []
 
-        extra_includes: list[str] = []
+        extra_includes: list[Path] = []
 
         dsdl_include_path = _extra_includes_from_env("DSDL_INCLUDE_PATH")
 
@@ -341,7 +340,7 @@ class NunavutArgumentParser(argparse.ArgumentParser):
                     subprocess_args.append(program_arg)
             return subprocess_args
 
-        post_processors = []
+        post_processors: list[PostProcessor] = []
         if args.pp_trim_trailing_whitespace:
             post_processors.append(TrimTrailingWhitespace())
             del args.pp_trim_trailing_whitespace

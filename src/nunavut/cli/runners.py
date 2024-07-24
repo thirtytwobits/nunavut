@@ -131,7 +131,7 @@ class LegacyArgparseRunner(Runner):
     :param argparse.Namespace args: The command line arguments.
     """
 
-    def __init__(self, args: argparse.ArgumentParser):
+    def __init__(self, args: argparse.Namespace):
         self._args = args
         assert self._args.legacy_mode
 
@@ -195,20 +195,12 @@ class LegacyArgparseRunner(Runner):
         code_generator = (
             None
             if not should_create_codegen
-            else DSDLCodeGenerator(
-                root_namespace,
-                templates_dir=self._args.templates_dir,
-                **generator_args
-            )
+            else DSDLCodeGenerator(root_namespace, templates_dir=self._args.templates_dir, **generator_args)
         )
         support_generator = (
             None
             if not should_create_supportgen
-            else SupportGenerator(
-                root_namespace,
-                templates_dir=self._args.support_templates_dir,
-                **generator_args
-            )
+            else SupportGenerator(root_namespace, templates_dir=self._args.support_templates_dir, **generator_args)
         )
         return (code_generator, support_generator)
 
@@ -272,7 +264,7 @@ class StandardArgparseRunner(Runner):
     :param argparse.Namespace args: The command line arguments.
     """
 
-    def __init__(self, args: argparse.ArgumentParser):
+    def __init__(self, args: argparse.Namespace):
         self._args = args
 
     @property

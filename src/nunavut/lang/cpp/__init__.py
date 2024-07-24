@@ -1016,9 +1016,7 @@ def filter_short_reference_name(language: Language, t: pydsdl.CompositeType) -> 
 
 
 @template_language_list_filter(__name__)
-def filter_includes(
-    language: Language, t: pydsdl.CompositeType, sort: bool = True
-) -> typing.List[str]:
+def filter_includes(language: Language, t: pydsdl.CompositeType, sort: bool = True) -> typing.List[str]:
     """
     Returns a list of all include paths for a given type.
 

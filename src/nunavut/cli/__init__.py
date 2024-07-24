@@ -12,7 +12,7 @@ import argparse
 import sys
 import textwrap
 from pathlib import Path
-from typing import Any, Optional, TypeVar
+from typing import Any, Optional, Type, TypeVar, cast
 
 from .parsers import NunavutArgumentParser
 
@@ -45,10 +45,23 @@ Type variable for the concrete parser to create.
 """
 
 
-def _make_parser(parser_type: ParserT) -> ParserT:
+def _make_parser(parser_type: Type[ParserT]) -> ParserT:
     """
     Defines the command-line interface. Provided as a separate factory method to
     support sphinx-argparse documentation.
+
+    :param parser_type: The type of parser to create. This should be a subclass of argparse.ArgumentParser
+    :return: A parser instance with the command-line interface defined.
+    :raises ValueError: If parser_type is not a subclass of argparse
+
+    .. invisible-code-block: python
+
+        from nunavut.cli import _make_parser
+        from pytest import raises
+
+        with raises(ValueError):
+            _make_parser(str)
+
     """
 
     epilog = textwrap.dedent(
@@ -69,6 +82,9 @@ def _make_parser(parser_type: ParserT) -> ParserT:
         ᓄᓇᕗᑦ
     """
     )
+
+    if not issubclass(parser_type, argparse.ArgumentParser):
+        raise ValueError("parser_type must be a subclass of argparse.ArgumentParser")
 
     parser = parser_type(
         description="Generate code from Cyphal DSDL using pydsdl and jinja2",
@@ -725,7 +741,7 @@ def _make_parser(parser_type: ParserT) -> ParserT:
         ).lstrip(),
     )
 
-    return parser
+    return cast(ParserT, parser)
 
 
 def make_argparse_parser() -> argparse.ArgumentParser:
