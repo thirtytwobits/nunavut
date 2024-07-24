@@ -310,12 +310,13 @@ def main(command_line_args: Optional[Any] = None) -> int:
     Main entry point for command-line scripts.
     """
 
-    from . import make_nunavut_parser  # pylint: disable=import-outside-toplevel
+    from . import _make_parser  # pylint: disable=import-outside-toplevel
+    from .parsers import NunavutArgumentParser  # pylint: disable=import-outside-toplevel
 
     #
     # Parse the command-line arguments.
     #
-    parser = make_nunavut_parser()
+    parser = _make_parser(NunavutArgumentParser)
 
     try:
         import argcomplete  # pylint: disable=import-outside-toplevel

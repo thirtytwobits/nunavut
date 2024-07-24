@@ -14,8 +14,6 @@ import textwrap
 from pathlib import Path
 from typing import Any, Optional, Type, TypeVar, cast
 
-from .parsers import NunavutArgumentParser
-
 
 class _LazyVersionAction(argparse._VersionAction):
     """
@@ -77,7 +75,7 @@ def _make_parser(parser_type: Type[ParserT]) -> ParserT:
             # and generate .h files into a directory named 'include' for
             # the uavcan.node.Heartbeat.1.0 data type and its dependencies
 
-            nnvg --outdir include --templates c_jinja -e .h dsdl/uavcan::node/7509.Heartbeat.1.0.dsdl
+            nnvg --outdir include --templates c_jinja -e .h dsdl/uavcan:node/7509.Heartbeat.1.0.dsdl
 
         ᓄᓇᕗᑦ
     """
@@ -750,10 +748,3 @@ def make_argparse_parser() -> argparse.ArgumentParser:
     This should be used for documentation and tab-completion tools.
     """
     return _make_parser(argparse.ArgumentParser)
-
-
-def make_nunavut_parser() -> NunavutArgumentParser:
-    """
-    Defines the command-line interface using the full NunavutArgumentParser.
-    """
-    return _make_parser(NunavutArgumentParser)

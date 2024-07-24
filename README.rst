@@ -62,7 +62,7 @@ The examples do not replace the documentation, please do endeavor to read it.
 Generate C headers using the command-line tool
 ----------------------------------------------
 
-This example assumes that the public regulated namespace directories ``reg`` and ``uavcan`` reside under
+This example assumes that the public regulated namespace directories ``uavcan`` reside under
 ``public_regulated_data_types/``.
 Nunavut is invoked to generate code for the former.
 
@@ -153,16 +153,17 @@ Extras
 
 Support for shell autocomplete (see `argcomplete docs`_ for full details)
 
-```
-pip install "nunavut[shell]"
+.. code-block:: bash
 
-# if you haven't setup argcomplete ever...
-activate-global-python-argcomplete
-source ~/.my_shell_rc_thingy_see_argcomplete_docs
+    pip install "nunavut[shell]"
 
-# now register nnvg with argcomplete
-eval "$(register-python-argcomplete nnvg)"
-```
+    # if you haven't setup argcomplete ever...
+    activate-global-python-argcomplete
+    source ~/.my_shell_rc_thingy_see_argcomplete_docs
+
+    # now register nnvg with argcomplete
+    eval "$(register-python-argcomplete nnvg)"
+
 
 ************************************************
 Bundled third-party software

@@ -185,13 +185,14 @@ def generate_types(
     platforms. Furthermore, this method will not generate dependant types, instead, only generating types found under
     the `root_namespace_dir` (i.e. types found in the lookup directories will not be generated).
 
-    ```
-    ██████  ███████ ██████  ██████  ███████  ██████  █████  ████████ ███████ ██████
-    ██   ██ ██      ██   ██ ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
-    ██   ██ █████   ██████  ██████  █████   ██      ███████    ██    █████   ██   ██
-    ██   ██ ██      ██      ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
-    ██████  ███████ ██      ██   ██ ███████  ██████ ██   ██    ██    ███████ ██████
-    ```
+    .. code-block:: text
+
+        ██████  ███████ ██████  ██████  ███████  ██████  █████  ████████ ███████ ██████
+        ██   ██ ██      ██   ██ ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
+        ██   ██ █████   ██████  ██████  █████   ██      ███████    ██    █████   ██   ██
+        ██   ██ ██      ██      ██   ██ ██      ██      ██   ██    ██    ██      ██   ██
+        ██████  ███████ ██      ██   ██ ███████  ██████ ██   ██    ██    ███████ ██████
+
 
     Use `generate_all` instead which takes a list of target types and will generate code for both the specified types
     and any dependant types. Also, generation of .d files is only supported when using `generate_all`.
@@ -393,13 +394,13 @@ def generate_all(
 
         dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
 
-        if len(target_files) > 0:
-            target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
-                target_files,
-                root_namespace_directories_or_names,
-                allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
-            )
+        target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
+            target_files,
+            root_namespace_directories_or_names,
+            allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
+        )
 
+        if len(target_dsdl_files) > 0 or len(dependent_dsdl_files) > 0:
             if not kwargs.get("omit_dependencies", False):
                 # Normally we generated all files including the targest and the transitive closure of their
                 # dependencies.
@@ -440,8 +441,6 @@ def generate_all(
         else:
             # If no target files are provided then we can't generate source from dsdl. We can only generate support
             # files if needed.
-            target_dsdl_files, dependent_dsdl_files = [], []
-
             if support_generator_type_resolved is not None:
                 namespace = build_namespace_tree([], "", str(outdir), language_context)
                 support_generator = support_generator_type_resolved(

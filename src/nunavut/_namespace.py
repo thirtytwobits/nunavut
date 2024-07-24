@@ -180,35 +180,35 @@ class Namespace(pydsdl.Any):
     @property
     def full_name(self) -> str:
         """
-        See :property:`pydsdl.CompositeType.full_name`_
+        See :py:attr:`pydsdl.CompositeType.full_name`
         """
         return self._full_namespace
 
     @property
     def full_namespace(self) -> str:
         """
-        See :property:`pydsdl.CompositeType.full_namespace`_
+        See :py:attr:`pydsdl.CompositeType.full_namespace`
         """
         return self._full_namespace
 
     @property
     def source_file_path(self) -> pathlib.Path:
         """
-        See :property:`pydsdl.CompositeType.source_file_path`_
+        See :py:attr:`pydsdl.CompositeType.source_file_path`
         """
         return self._source_folder
 
     @property
     def data_types(self) -> typing.KeysView[pydsdl.CompositeType]:
         """
-        See :property:`pydsdl.CompositeType.data_types`_
+        See :py:attr:`pydsdl.CompositeType.data_types`
         """
         return self._data_type_to_outputs.keys()
 
     @property
     def attributes(self) -> typing.List[pydsdl.CompositeType]:
         """
-        See :property:`pydsdl.CompositeType.attributes`_
+        See :py:attr:`pydsdl.CompositeType.attributes`
         """
         return []
 
