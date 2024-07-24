@@ -34,6 +34,11 @@
 //     {{ key }}:  {{ value }}
 {%- endfor %}
 //
+// Language
+{%- for key, value in nunavut.target_language.items() %}
+//     {{ key }}:  {{ value }}
+{%- endfor %}
+//
 // Language Options
 {% for key, value in options.items() -%}
 //     {{ key }}:  {{ value}}

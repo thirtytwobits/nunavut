@@ -10,7 +10,6 @@ This flag is not necessary to use the new mode normally.
 """
 import json
 import os
-import subprocess
 from argparse import ArgumentError
 from pathlib import Path
 from typing import Any, Callable
@@ -19,7 +18,7 @@ import pydsdl
 import pytest
 
 import nunavut._version
-from nunavut.lang import LanguageContextBuilder
+from nunavut.lang import LanguageContextBuilder, UnsupportedLanguageError
 from nunavut.lang._language import LanguageClassLoader
 
 
@@ -717,8 +716,8 @@ def test_issue_116(gen_paths: Any, run_nnvg_main: Callable) -> None:
         (gen_paths.dsdl_dir / Path("uavcan")).as_posix(),
     ]
 
-    with pytest.raises(ArgumentError, match=r"language blarg is not a supported language"):
-        run_nnvg_main(gen_paths, nnvg_args, raise_argument_error=True)
+    with pytest.raises(UnsupportedLanguageError, match=r"language blarg is not a supported language"):
+        run_nnvg_main(gen_paths, nnvg_args)
 
 
 def test_language_allow_unregulated_fixed_port_id(gen_paths: Any, run_nnvg_main: Callable) -> None:

@@ -40,7 +40,7 @@ def test_realgen(
     assert len(targets) > 100
     # Sanity check that we found the dsdl source.
 
-    generate_all(
+    result = generate_all(
         lang_key,
         targets,
         root_namespace_dir,
@@ -49,6 +49,10 @@ def test_realgen(
         language_options=language_options,
         include_experimental_languages=True,
     )
+
+    # We only expect one root namespace directory in the public regulated data types.
+    assert len(result.root_namespace_directories) == 1
+    assert result.root_namespace_directories[0].stem == "uavcan"
 
 
 def test_realgen_heartbeat(

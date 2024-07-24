@@ -394,14 +394,12 @@ def jinja_filter_tester(request: pytest.FixtureRequest) -> typing.Any:  # pylint
             additional_filters = {filter_or_list_of_filters.__name__: filter_or_list_of_filters}
 
         e = (
-            CodeGenEnvironmentBuilder(DictLoader({"test": body}), lctx)
+            CodeGenEnvironmentBuilder(DictLoader({"test": body}))
             .set_allow_filter_test_or_use_query_overwrite(True)
             .add_filters(**additional_filters)
             .add_globals(**additional_globals)
-            .create()
-        )
-        e.update_nunavut_globals(
-            embed_auditing_info=True,
+            .set_embed_auditing_info(True)
+            .create(lctx)
         )
 
         rendered = str(e.get_template("test").render())

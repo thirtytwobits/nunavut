@@ -68,6 +68,11 @@ class GenerationResult:
     The set of template files used to generate the `generated_files`.
     """
 
+    root_namespace_directories: list[Path]
+    """
+    The set of root namespace directories used to generate the `generated_files`.
+    """
+
 
 class AbstractGenerator(metaclass=abc.ABCMeta):
     """
@@ -139,7 +144,6 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         self,
         is_dryrun: bool = False,
         allow_overwrite: bool = True,
-        embed_auditing_info: bool = False,
     ) -> Iterable[Path]:
         """
         Generates all output for a given :class:`nunavut.Namespace` and using
@@ -150,9 +154,6 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         :param bool allow_overwrite: If True then the generator will attempt to overwrite any existing files
                                 it encounters. If False then the generator will raise an error if the
                                 output file exists and the generation is not a dry-run.
-        :param embed_auditing_info: If True then additional information about the inputs and environment used to
-                                generate source will be embedded in the generated files at the cost of build
-                                reproducibility.
         :return: Iterator over the files generated.
         :raises: PermissionError if :attr:`allow_overwrite` is False and the file exists.
         """
@@ -200,7 +201,8 @@ def generate_types(
     :param Path root_namespace_dir: The path to the root of the DSDL types to generate
                 code for.
     :param Path out_dir: The path to generate code at and under.
-    :param bool omit_serialization_support: If True then logic used to serialize and deserialize data is omitted.
+    :param bool omit_serialization_support: If True then logic used to serialize and deserialize data is omitted from
+                generated code.
     :param bool is_dryrun: If True then nothing is generated but all other activity is performed and any errors
                 that would have occurred are reported.
     :param bool allow_overwrite: If True then generated files are allowed to overwrite existing files under the
@@ -217,8 +219,9 @@ def generate_types(
     :param embed_auditing_info: If True then additional information about the inputs and environment used to
                                 generate source will be embedded in the generated files at the cost of build
                                 reproducibility.
-    :return: A tuple containing lists of target files and generated files. The dependent files list will be empty
-                as this method does not generate dependant types.
+    :return: A dataclass containing the language context used to generate outputs, the set of target files discovered,
+             the template files used to generate the outputs, and the generated file paths. This legacy method does not
+             return the set of dependent files generated nor does it return the set of root namespace directories.
     """
     if language_options is None:
         language_options = {}
@@ -246,20 +249,21 @@ def generate_types(
         if not omit_serialization_support
         else (ResourceType.ANY.value & ~ResourceType.SERIALIZATION_SUPPORT.value)
     )
-    generator = DSDLCodeGenerator(namespace, resource_types)
-    support_generator = SupportGenerator(namespace, resource_types)
+    generator = DSDLCodeGenerator(namespace, resource_types, embed_auditing_info=embed_auditing_info)
+    support_generator = SupportGenerator(namespace, resource_types, embed_auditing_info=embed_auditing_info)
 
     template_files = list(support_generator.get_templates())
-    generated_files = list(support_generator.generate_all(is_dryrun, allow_overwrite, embed_auditing_info))
+    generated_files = list(support_generator.generate_all(is_dryrun, allow_overwrite))
 
     template_files += list(generator.get_templates())
-    generated_files += list(generator.generate_all(is_dryrun, allow_overwrite, embed_auditing_info))
+    generated_files += list(generator.generate_all(is_dryrun, allow_overwrite))
     return GenerationResult(
         language_context,
         [DSDLFilePath(ct.source_file_path_to_root, ct.source_file_path) for ct in type_map],
         [],
         generated_files,
         template_files,
+        [],
     )
 
 
@@ -307,9 +311,11 @@ def generate_all(
 
             root_namespace_directories_or_names = ["animals", "plants"]
 
+            # or
+
             root_namespace_directories_or_names = [
-                                                    Path("workspace/project/types/animals"),
-                                                    Path("workspace/project/types/plants")
+                            Path("workspace/project/types/animals"),
+                            Path("workspace/project/types/plants")
                         ]
 
 
@@ -344,8 +350,7 @@ def generate_all(
         a default support generator will be used.
     :param kwargs: Additional arguments passed into the generator constructors.
 
-    :returns GenerationResult: A dataclass containing lists of target files, dependent files, and generated files
-        (i.e explicit inputs, discovered inputs, and determined outputs).
+    :returns GenerationResult: A dataclass containing explicit inputs, discovered inputs, and determined outputs.
     """
     generated_files: set[Path] = set()
     template_files: set[Path] = set()
@@ -386,6 +391,8 @@ def generate_all(
             .create()
         )
 
+        dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
+
         if len(target_files) > 0:
             target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
                 target_files,
@@ -393,13 +400,16 @@ def generate_all(
                 allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
             )
 
-            dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
-
             if not kwargs.get("omit_dependencies", False):
+                # Normally we generated all files including the targest and the transitive closure of their
+                # dependencies.
                 files_to_generate = itertools.chain(target_dsdl_files, dependent_dsdl_files)
             else:
+                # If we are omit(ting)_dependencies then we only generate the target files.
                 files_to_generate = target_dsdl_files
 
+            # Because we have to build a namespace object for each root namespace we need to group the files by
+            # the set of all root namespaces they are under.
             for dsdl_file in files_to_generate:
                 root_path = dsdl_file.source_file_path_to_root
                 dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
@@ -409,29 +419,40 @@ def generate_all(
 
                 if support_generator_type_resolved is not None:
                     support_generator = support_generator_type_resolved(
-                        namespace, resource_types, generate_namespace_types=generate_namespace_types, **support_kwargs
+                        namespace,
+                        resource_types,
+                        generate_namespace_types=generate_namespace_types,
+                        embed_auditing_info=embed_auditing_info,
+                        **support_kwargs,
                     )
                     template_files.update(support_generator.get_templates())
-                    generated_files.update(
-                        support_generator.generate_all(dry_run, not no_overwrite, embed_auditing_info)
-                    )
+                    generated_files.update(support_generator.generate_all(dry_run, not no_overwrite))
 
                 if code_generator_type_resolved is not None:
                     generator = code_generator_type_resolved(
-                        namespace, generate_namespace_types=generate_namespace_types, **kwargs
+                        namespace,
+                        generate_namespace_types=generate_namespace_types,
+                        embed_auditing_info=embed_auditing_info,
+                        **kwargs,
                     )
                     template_files.update(generator.get_templates())
-                    generated_files.update(generator.generate_all(dry_run, not no_overwrite, embed_auditing_info))
+                    generated_files.update(generator.generate_all(dry_run, not no_overwrite))
         else:
+            # If no target files are provided then we can't generate source from dsdl. We can only generate support
+            # files if needed.
             target_dsdl_files, dependent_dsdl_files = [], []
 
             if support_generator_type_resolved is not None:
                 namespace = build_namespace_tree([], "", str(outdir), language_context)
                 support_generator = support_generator_type_resolved(
-                    namespace, resource_types, generate_namespace_types=generate_namespace_types, **support_kwargs
+                    namespace,
+                    resource_types,
+                    generate_namespace_types=generate_namespace_types,
+                    embed_auditing_info=embed_auditing_info,
+                    **support_kwargs,
                 )
                 template_files.update(support_generator.get_templates())
-                generated_files.update(support_generator.generate_all(dry_run, not no_overwrite, embed_auditing_info))
+                generated_files.update(support_generator.generate_all(dry_run, not no_overwrite))
             else:
                 logging.info("No target files provided and no support files would be generated. Nothing to do.")
 
@@ -441,4 +462,5 @@ def generate_all(
         [DSDLFilePath(ct.source_file_path_to_root, ct.source_file_path) for ct in dependent_dsdl_files],
         list(generated_files),
         list(template_files),
+        list(dsdl_files_by_namespace.keys()),
     )

@@ -182,10 +182,12 @@ class LegacyArgparseRunner(Runner):
         # nunavut : create generators
         #
         generator_args = {
+            "resource_types": self._args.resource_types,
             "generate_namespace_types": self._args.generate_namespace_types,
             "trim_blocks": self._args.trim_blocks,
             "lstrip_blocks": self._args.lstrip_blocks,
             "post_processors": self._args.post_processors,
+            "embed_auditing_info": self._args.embed_auditing_info,
         }
 
         from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel
@@ -195,7 +197,6 @@ class LegacyArgparseRunner(Runner):
             if not should_create_codegen
             else DSDLCodeGenerator(
                 root_namespace,
-                resource_types=self._args.resource_types,
                 templates_dir=self._args.templates_dir,
                 **generator_args
             )
@@ -205,7 +206,6 @@ class LegacyArgparseRunner(Runner):
             if not should_create_supportgen
             else SupportGenerator(
                 root_namespace,
-                resource_types=self._args.resource_types,
                 templates_dir=self._args.support_templates_dir,
                 **generator_args
             )
@@ -255,14 +255,12 @@ class LegacyArgparseRunner(Runner):
             support_generator.generate_all(
                 is_dryrun=self._args.dry_run,
                 allow_overwrite=not self._args.no_overwrite,
-                embed_auditing_info=self._args.embed_auditing_info,
             )
 
         if code_generator is not None:
             code_generator.generate_all(
                 is_dryrun=self._args.dry_run,
                 allow_overwrite=not self._args.no_overwrite,
-                embed_auditing_info=self._args.embed_auditing_info,
             )
 
 

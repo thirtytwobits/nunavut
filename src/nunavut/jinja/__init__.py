@@ -78,6 +78,11 @@ class CodeGenerator(AbstractGenerator):
                                             specified). For example, if the target language is ``c`` and this parameter
                                             was set to ``foo`` then built-in templates would be loaded from
                                             ``nunavut.lang.c.foo``.
+    :type builtin_template_path: str
+    :param search_policy: The policy to use when searching for templates.
+    :type search_policy: ResourceSearchPolicy
+    :param embed_auditing_info: If True then the generator will embed auditing information in the generated code.
+    :type embed_auditing_info: bool
     :raises RuntimeError: If any additional filter or test attempts to replace a built-in
                           or otherwise already defined filter or test.
     """
@@ -163,6 +168,7 @@ class CodeGenerator(AbstractGenerator):
         post_processors: typing.Optional[list["PostProcessor"]] = None,
         builtin_template_path: str = DEFAULT_TEMPLATE_PATH,
         search_policy: ResourceSearchPolicy = ResourceSearchPolicy.FIND_ALL,
+        embed_auditing_info: bool = False,
         **kwargs: typing.Any,
     ):
         super().__init__(namespace, resource_types, generate_namespace_types, **kwargs)
@@ -189,7 +195,7 @@ class CodeGenerator(AbstractGenerator):
         self._post_processors = self._handle_post_processors(target_language, post_processors)
 
         env_builder = (
-            CodeGenEnvironmentBuilder(self._dsdl_template_loader, language_context)
+            CodeGenEnvironmentBuilder(self._dsdl_template_loader)
             .set_trim_blocks(trim_blocks)
             .set_lstrip_blocks(lstrip_blocks)
         )
@@ -200,8 +206,9 @@ class CodeGenerator(AbstractGenerator):
             env_builder.add_tests(**additional_tests)
         if additional_globals is not None:
             env_builder.add_globals(**additional_globals)
+        env_builder.set_embed_auditing_info(embed_auditing_info)
 
-        self._env = env_builder.create()
+        self._env = env_builder.create(language_context)
 
     @property
     def dsdl_loader(self) -> DSDLTemplateLoader:
@@ -252,7 +259,6 @@ class CodeGenerator(AbstractGenerator):
         self,
         is_dryrun: bool = False,
         allow_overwrite: bool = True,
-        embed_auditing_info: bool = False,
     ) -> typing.Iterable[Path]:
         raise NotImplementedError()
 
@@ -784,11 +790,8 @@ class DSDLCodeGenerator(CodeGenerator):
         self,
         is_dryrun: bool = False,
         allow_overwrite: bool = True,
-        embed_auditing_info: bool = False,
     ) -> typing.Iterable[Path]:
         generated = []  # type: list[Path]
-        # TODO: support_namespace and version?
-        self._env.update_nunavut_globals(embed_auditing_info=embed_auditing_info)
         provider = self.namespace.get_all_types if self.generate_namespace_types else self.namespace.get_all_datatypes
         for parsed_type, output_path in provider():
             logger.info("Generating: %s", parsed_type)
@@ -919,11 +922,8 @@ class SupportGenerator(CodeGenerator):
         self,
         is_dryrun: bool = False,
         allow_overwrite: bool = True,
-        embed_auditing_info: bool = False,
     ) -> typing.Iterable[Path]:
         target_language = self.language_context.get_target_language()
-        # TODO: support_namespace and version?
-        self._env.update_nunavut_globals(embed_auditing_info=embed_auditing_info)
         target_path = Path(self.namespace.get_support_output_folder()) / self._sub_folders
 
         line_pps: list[LinePostProcessor] = []

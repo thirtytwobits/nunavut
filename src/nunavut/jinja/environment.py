@@ -15,22 +15,9 @@ import logging
 import platform
 import sys
 import types
-from typing import (
-    AbstractSet,
-    Any,
-    Callable,
-    ItemsView,
-    KeysView,
-    Mapping,
-    Optional,
-    Tuple,
-    Union,
-    ValuesView,
-    cast,
-)
+from typing import AbstractSet, Any, Callable, ItemsView, KeysView, Mapping, Optional, Tuple, Union, ValuesView, cast
 
 from nunavut._templates import LanguageEnvironment
-from nunavut._utilities import ResourceType
 from nunavut.lang import Language, LanguageClassLoader, LanguageContext
 
 from .extensions import JinjaAssert, UseQuery
@@ -157,9 +144,8 @@ class CodeGenEnvironmentBuilder:
 
     DEFAULT_JINJA_EXTENSIONS = [jinja_do, loopcontrols, JinjaAssert, UseQuery]
 
-    def __init__(self, loader: BaseLoader, lctx: LanguageContext) -> None:
+    def __init__(self, loader: BaseLoader) -> None:
         self._loader = loader
-        self._lctx = lctx
         self._trim_blocks = False
         self._lstrip_blocks = False
         self._additional_filters: Optional[dict[str, Callable]] = None
@@ -167,6 +153,7 @@ class CodeGenEnvironmentBuilder:
         self._additional_globals: Optional[dict[str, Any]] = None
         self._extensions = self.DEFAULT_JINJA_EXTENSIONS[:]
         self._allow_filter_test_or_use_query_overwrite = False
+        self._embed_auditing_info = False
 
     @property
     def loader(self) -> BaseLoader:
@@ -177,16 +164,6 @@ class CodeGenEnvironmentBuilder:
         :rtype: BaseLoader
         """
         return self._loader
-
-    @property
-    def lctx(self) -> LanguageContext:
-        """
-        The language context.
-
-        :return: The language context.
-        :rtype: LanguageContext
-        """
-        return self._lctx
 
     def set_trim_blocks(self, trim_blocks: bool) -> "CodeGenEnvironmentBuilder":
         """
@@ -276,16 +253,26 @@ class CodeGenEnvironmentBuilder:
         self._allow_filter_test_or_use_query_overwrite = allow_filter_test_or_use_query_overwrite
         return self
 
-    def create(self) -> "CodeGenEnvironment":
+    def set_embed_auditing_info(self, embed_auditing_info: bool) -> "CodeGenEnvironmentBuilder":
+        """
+        Set whether to embed auditing information in generated files.
+
+        :param bool embed_auditing_info: Whether to embed auditing information.
+        :return: The CodeGenEnvironmentBuilder object.
+        :rtype: CodeGenEnvironmentBuilder
+        """
+        self._embed_auditing_info = embed_auditing_info
+        return self
+
+    def create(self, lctx: LanguageContext) -> "CodeGenEnvironment":
         """
         Create a CodeGenEnvironment object.
 
         :return: A CodeGenEnvironment object.
         :rtype: CodeGenEnvironment
         """
-        return CodeGenEnvironment(
+        env = CodeGenEnvironment(
             self.loader,
-            self.lctx,
             trim_blocks=self._trim_blocks,
             lstrip_blocks=self._lstrip_blocks,
             additional_filters=self._additional_filters,
@@ -293,7 +280,10 @@ class CodeGenEnvironmentBuilder:
             additional_globals=self._additional_globals,
             extensions=self._extensions,
             allow_filter_test_or_use_query_overwrite=self._allow_filter_test_or_use_query_overwrite,
+            embed_auditing_info=self._embed_auditing_info,
         )
+        env.set_language_context(lctx)
+        return env
 
 
 # +---------------------------------------------------------------------------+
@@ -319,7 +309,7 @@ class CodeGenEnvironment(Environment):
 
         template = 'Hello World'
 
-        e = CodeGenEnvironmentBuilder(DictLoader({'test': template}), lctx).create()
+        e = CodeGenEnvironmentBuilder(DictLoader({'test': template})).create(lctx)
         assert 'Hello World' ==  e.get_template('test').render()
 
     .. warning::
@@ -331,9 +321,9 @@ class CodeGenEnvironment(Environment):
 
         try:
             (
-                CodeGenEnvironmentBuilder(DictLoader({'test': template}), lctx)
+                CodeGenEnvironmentBuilder(DictLoader({'test': template}))
                 .add_globals(ln='bad_ln')
-                .create()
+                .create(lctx)
             )
             assert False
         except RuntimeError:
@@ -345,9 +335,9 @@ class CodeGenEnvironment(Environment):
 
         try:
             (
-                CodeGenEnvironmentBuilder(DictLoader({'test': template}), lctx)
+                CodeGenEnvironmentBuilder(DictLoader({'test': template}))
                 .add_filters(indent=lambda x: x)
-                .create()
+                .create(lctx)
             )
             assert False
         except RuntimeError:
@@ -356,10 +346,10 @@ class CodeGenEnvironment(Environment):
         # You can allow overwrite of built-ins using the ``allow_filter_test_or_use_query_overwrite``
         # argument.
         e = (
-                CodeGenEnvironmentBuilder(DictLoader({'test': template}), lctx)
+                CodeGenEnvironmentBuilder(DictLoader({'test': template}))
                 .add_filters(indent=lambda x: x)
                 .set_allow_filter_test_or_use_query_overwrite(True)
-                .create()
+                .create(lctx)
             )
         assert 'foo' == e.filters['indent']('foo')
 
@@ -374,9 +364,9 @@ class CodeGenEnvironment(Environment):
                 return name
 
         e = (
-                CodeGenEnvironmentBuilder(DictLoader({'test': template}), lctx)
+                CodeGenEnvironmentBuilder(DictLoader({'test': template}))
                 .add_filters(filter_misnamed=lambda x: x)
-                .create()
+                .create(lctx)
             )
 
         try:
@@ -399,7 +389,6 @@ class CodeGenEnvironment(Environment):
     def __init__(
         self,
         loader: BaseLoader,
-        lctx: LanguageContext,
         trim_blocks: bool,
         lstrip_blocks: bool,
         additional_filters: Optional[dict[str, Callable]],
@@ -407,6 +396,7 @@ class CodeGenEnvironment(Environment):
         additional_globals: Optional[dict[str, Any]],
         extensions: Optional[list[Extension]],
         allow_filter_test_or_use_query_overwrite: bool,
+        embed_auditing_info: bool = False,
     ):  # pylint: disable=too-many-arguments
         super().__init__(
             loader=loader,  # nosec
@@ -428,32 +418,78 @@ class CodeGenEnvironment(Environment):
                 self.globals[global_name] = global_value
 
         self._allow_replacements = allow_filter_test_or_use_query_overwrite
+        self._embed_auditing_info = embed_auditing_info
 
         for global_namespace in self.RESERVED_GLOBAL_NAMESPACES:
             self.globals[global_namespace] = LanguageTemplateNamespace()
 
         self.globals["now_utc"] = datetime.datetime(datetime.MINYEAR, 1, 1)
-        self._target_language = lctx.get_target_language()
 
-        # --------------------------------------------------
-        # After this point we do that most heinous act so common in dynamic languages;
-        # we expose the state of this partially constructed object so we can complete
-        # configuring it.
+        self._additional_filters = additional_filters
+        self._additional_tests = additional_tests
+        self._target_language: Optional[Language] = None
+
+    def set_language_context(self, lctx: LanguageContext) -> None:
+        """
+        Set the language context and update the environment with the supported languages.
+        This also takes the target language from the context and updates the environment with the target language's
+        globals, options, filters, and tests.
+        """
+        self._target_language = lctx.get_target_language()
 
         self._update_language_support(lctx)
 
         supported_languages = lctx.get_supported_languages().values()  # type: Optional[ValuesView[Language]]
 
-        self.update_nunavut_globals()
+        nunavut_namespace = self.nunavut_global
+        setattr(nunavut_namespace, "embed_auditing_info", self._embed_auditing_info)
+        setattr(nunavut_namespace, "platform_version", self._create_platform_version(self._embed_auditing_info))
+
+        if self._target_language is None:
+            omit_serialization = False
+            support_version = (0, 0, 0)
+            support_namespace = []
+            target_language_name = "(no target language)"
+            experimental = False
+        else:
+            omit_serialization = self._target_language.get_config_value_as_bool("omit_serialization_support", False)
+            support_version = self._target_language.get_support_module()[1]
+            support_namespace = self._target_language.support_namespace
+            target_language_name = self._target_language.name
+            experimental = not self._target_language.stable_support
+
+        setattr(
+            nunavut_namespace,
+            "support",
+            {
+                "omit": omit_serialization,  # deprecated. Use "options.omit_serialization_support".
+                "namespace": ".".join(support_namespace),
+                "version": f"{support_version[0]}.{support_version[1]}.{support_version[2]}",
+            },
+        )
+
+        setattr(
+            nunavut_namespace,
+            "target_language",
+            {"name": target_language_name, "experimental": experimental},
+        )
+
+        if "version" not in nunavut_namespace:
+            # pylint: disable=import-outside-toplevel
+            from nunavut import __version__ as nunavut_version
+
+            setattr(nunavut_namespace, "version", nunavut_version)
 
         self.add_conventional_methods_to_environment(self)
 
-        if additional_filters is not None:
+        if self._additional_filters is not None:
             self._add_each_to_environment(
-                additional_filters.items(), self.filters, supported_languages=supported_languages
+                self._additional_filters.items(), self.filters, supported_languages=supported_languages
             )
-        if additional_tests is not None:
-            self._add_each_to_environment(additional_tests.items(), self.tests, supported_languages=supported_languages)
+        if self._additional_tests is not None:
+            self._add_each_to_environment(
+                self._additional_tests.items(), self.tests, supported_languages=supported_languages
+            )
 
     def add_conventional_methods_to_environment(self, obj: Any) -> None:
         """
@@ -471,42 +507,6 @@ class CodeGenEnvironment(Environment):
                 self._add_conventional_method_to_environment(method, name, supported_languages=self.supported_languages)
             except TypeError:
                 pass
-
-    def update_nunavut_globals(
-        self,
-        support_namespace: str = "",
-        support_version: Tuple[int, int, int] = (0, 0, 0),
-        embed_auditing_info: bool = False,
-    ) -> None:
-        """
-        Update the global properties available to templates as `nunavut`.
-        :param support_namespace:           The name of a generated namespace for support code. Available as
-                                            `nunavut.support.namespace` in templates.
-        :param support_version:             The version to report for supporting code. Available as
-                                            `nunavut.support.version` in templates.
-        :param embed_auditing_info:         Boolean flag available as `nunavut.embed_auditing_info` in templates.
-        """
-        nunavut_namespace = self.nunavut_global
-        setattr(nunavut_namespace, "embed_auditing_info", embed_auditing_info)
-        setattr(nunavut_namespace, "platform_version", self._create_platform_version(embed_auditing_info))
-
-        omit_serialization = self.target_language.get_config_value_as_bool("omit_serialization_support", False)
-
-        setattr(
-            nunavut_namespace,
-            "support",
-            {
-                "omit": omit_serialization,  # deprecated. Use "options.omit_serialization_support".
-                "namespace": support_namespace,
-                "version": support_version,
-            },
-        )
-
-        if "version" not in nunavut_namespace:
-            # pylint: disable=import-outside-toplevel
-            from nunavut import __version__ as nunavut_version
-
-            setattr(nunavut_namespace, "version", nunavut_version)
 
     @property
     def supported_languages(self) -> ValuesView[Language]:
@@ -578,6 +578,16 @@ class CodeGenEnvironment(Environment):
         :rtype: datetime.datetime
         """
         return cast(datetime.datetime, self.globals["now_utc"])
+
+    @property
+    def embed_auditing_info(self) -> bool:
+        """
+        Whether to embed auditing information in generated files.
+
+        :return: Whether to embed auditing information.
+        :rtype: bool
+        """
+        return self._embed_auditing_info
 
     @now_utc.setter
     def now_utc(self, utc_time: datetime.datetime) -> None:
@@ -680,9 +690,9 @@ class CodeGenEnvironment(Environment):
                     return True
 
                 e = (
-                    CodeGenEnvironmentBuilder(DictLoader({'test': 'hello world'}), lctx)
+                    CodeGenEnvironmentBuilder(DictLoader({'test': 'hello world'}))
                     .add_tests(foo=test_test)
-                    .create()
+                    .create(lctx)
                 )
                 assert test_test == e.tests['foo'].func
                 assert e.tests['foo']()
