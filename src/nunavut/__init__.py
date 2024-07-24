@@ -39,7 +39,6 @@ from .lang import LanguageContext
 from .lang import LanguageContextBuilder
 from .lang import UnsupportedLanguageError
 from .lang._config import LanguageConfig
-from ._exceptions import InternalError
 
 if _sys.version_info[:2] < (3, 8):  # pragma: no cover
     print("A newer version of Python is required", file=_sys.stderr)
@@ -55,7 +54,6 @@ __all__ = [
     "DSDLCodeGenerator",
     "generate_all",
     "generate_types",
-    "InternalError",
     "Language",
     "LanguageConfig",
     "LanguageContext",

@@ -769,3 +769,31 @@ def test_list_configuration(gen_paths: Any, run_nnvg_main: Callable) -> None:
     )
     assert len(parsed_config[default_target_section_name]) > 0
     print(yaml.dump(parsed_config))
+
+
+def test_colon_syntax(gen_paths: Any, run_nnvg_main: Callable) -> None:
+    """
+    Test the colon syntax for specifying DSDL files.
+    """
+    expected_output = [
+        gen_paths.out_dir / Path("herringtec") / Path("Carp_1_0.h"),
+        gen_paths.out_dir / Path("herringtec") / Path("Timer_2_1.h"),
+    ]
+
+    nnvg_args = [
+        "--disable-legacy-mode",
+        "--outdir",
+        gen_paths.out_dir.as_posix(),
+        "--target-language",
+        "c",
+        "--omit-serialization-support",
+        "--list-outputs",
+        f"{(gen_paths.dsdl_dir / Path('herringtec')).as_posix()}:{Path('Timer.2.1.dsdl').as_posix()}",
+        Path("herringtec", "Carp.1.0.dsdl").as_posix(),
+    ]
+
+    run_nnvg_main(gen_paths, nnvg_args)
+
+    completed = run_nnvg_main(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
+    completed_wo_empty = sorted([Path(i) for i in completed if len(i) > 0])
+    assert expected_output == completed_wo_empty

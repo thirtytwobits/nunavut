@@ -27,4 +27,4 @@ def list_support_files(
     """
     if resource_type & ResourceType.SERIALIZATION_SUPPORT.value:
         return iter_package_resources(__name__, ".j2")
-    return empty_list_support_files()
+    return empty_list_support_files()  # pragma: no cover

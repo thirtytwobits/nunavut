@@ -21,4 +21,4 @@ def list_support_files(resource_type: int = ResourceType.ANY.value) -> typing.Ge
     :param resource_type: A type of support file to list.
     """
     # pylint: disable=unused-argument
-    return empty_list_support_files()
+    return empty_list_support_files()  # pragma: no cover

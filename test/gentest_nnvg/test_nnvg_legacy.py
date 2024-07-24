@@ -119,12 +119,15 @@ def test_list_inputs(gen_paths: typing.Any, run_nnvg: typing.Callable, generate_
     ]
 
     if generate_support == "only":
-        expected_output = expected_serialization_support_outputs
+        expected_output = sorted(expected_serialization_support_outputs)
     elif generate_support != "never":
-        expected_output = expected_output + expected_serialization_support_outputs
+        expected_output = sorted(expected_output + expected_serialization_support_outputs)
+    else:
+        expected_output = sorted(expected_output)
 
     completed = run_nnvg(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
     completed_wo_empty = sorted([pathlib.Path(i) for i in completed if len(i) > 0])
+    assert len(expected_output) == len(completed_wo_empty)
     assert sorted(expected_output) == sorted(completed_wo_empty)
 
 
