@@ -5,7 +5,7 @@
 #
 # cSpell:ignore scotec, herringtec
 """
-Note that use of --disable-legacy-mode, in these tests is to assert that only the new mode is being tested.
+Note that use of --omit-deprecated, in these tests is to assert that only the new mode is being tested.
 This flag is not necessary to use the new mode normally.
 """
 import json
@@ -22,12 +22,12 @@ from nunavut.lang import LanguageContextBuilder, UnsupportedLanguageError
 from nunavut.lang._language import LanguageClassLoader
 
 
-@pytest.mark.parametrize("disable_legacy_mode,expect_failure", [(True, True), (True, False), (False, False)])
+@pytest.mark.parametrize("omit_deprecated,expect_failure", [(True, True), (True, False), (False, False)])
 def test_disable_legacy_mode(
-    gen_paths: Any, run_nnvg_main: Callable, disable_legacy_mode: bool, expect_failure: bool
+    gen_paths: Any, run_nnvg_main: Callable, omit_deprecated: bool, expect_failure: bool
 ) -> None:
     """
-    Verify that the --disable-legacy-mode option works as expected.
+    Verify that the --omit-deprecated option works as expected.
     """
 
     scotec_path = (gen_paths.dsdl_dir / Path("scotec")).as_posix()
@@ -62,12 +62,12 @@ def test_disable_legacy_mode(
     ]
 
     if expect_failure:
-        assert disable_legacy_mode
+        assert omit_deprecated
         # We can't expect a failure when not disabling legacy mode since it'll automatically fall back to legacy mode.
         with pytest.raises(pydsdl.FrontendError):
-            run_nnvg_main(gen_paths, ["--disable-legacy-mode"] + legacy_mode_args)
-    elif disable_legacy_mode:
-        run_nnvg_main(gen_paths, ["--disable-legacy-mode"] + normal_mode_args)
+            run_nnvg_main(gen_paths, ["--omit-deprecated"] + legacy_mode_args)
+    elif omit_deprecated:
+        run_nnvg_main(gen_paths, ["--omit-deprecated"] + normal_mode_args)
     else:
         run_nnvg_main(gen_paths, legacy_mode_args)
 
@@ -78,7 +78,7 @@ def test_DSDL_INCLUDE_PATH(gen_paths: Any, run_nnvg_main: Callable) -> None:
     """
 
     nnvg_args0 = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--support-templates",
@@ -107,7 +107,7 @@ def test_CYPHAL_PATH(gen_paths: Any, run_nnvg_main: Callable) -> None:
     """
 
     nnvg_args0 = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -133,7 +133,7 @@ def test_nnvg_heals_missing_dot_in_extension(gen_paths: Any, run_nnvg_main: Call
     verifies that logic.
     """
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -168,7 +168,7 @@ def test_list_inputs(gen_paths: Any, run_nnvg_main: Callable, generate_support: 
 
     # should be added to this list.
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--support-templates",
@@ -213,7 +213,7 @@ def test_list_inputs_w_namespaces(gen_paths: Any, run_nnvg_main: Callable) -> No
     )
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -246,7 +246,7 @@ def test_list_outputs(gen_paths: Any, run_nnvg_main: Callable) -> None:
     )
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -276,7 +276,7 @@ def test_list_support_outputs_builtin(gen_paths: Any, run_nnvg_main: Callable) -
     expected_output = sorted([support_path / Path("serialization").with_suffix(".h")])
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--outdir",
         gen_paths.out_dir.as_posix(),
         "--output-extension",
@@ -295,7 +295,7 @@ def test_do_nothing(gen_paths: Any, run_nnvg_main: Callable) -> None:
     Verifies nnvg's behavior no work is done.
     """
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--verbose",
         "--outdir",
         gen_paths.out_dir.as_posix(),
@@ -323,7 +323,7 @@ def test_list_outputs_builtin(gen_paths: Any, run_nnvg_main: Callable) -> None:
     )
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--outdir",
         gen_paths.out_dir.as_posix(),
         "--output-extension",
@@ -351,7 +351,7 @@ def test_list_outputs_builtin_pod(gen_paths: Any, run_nnvg_main: Callable) -> No
     )
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--outdir",
         gen_paths.out_dir.as_posix(),
         "--output-extension",
@@ -402,7 +402,7 @@ def test_target_language(
     expected_output = sorted(expected_output)
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -440,7 +440,7 @@ def test_language_option_defaults(gen_paths: Any, run_nnvg_main: Callable) -> No
     )
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -474,7 +474,7 @@ def test_language_option_overrides(target_endianness_override: str, gen_paths: A
     expected_output = gen_paths.out_dir / Path("uavcan") / Path("test") / Path("TestType_0_8.hpp")
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -504,7 +504,7 @@ def test_language_option_target_endianness_illegal_option(gen_paths: Any, run_nn
     """
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -531,7 +531,7 @@ def test_language_option_omit_floatingpoint(gen_paths: Any, run_nnvg_main: Calla
     expected_output = gen_paths.out_dir / Path("uavcan") / Path("test") / Path("TestType_0_8.hpp")
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -561,7 +561,7 @@ def test_language_option_generate_asserts(gen_paths: Any, run_nnvg_main: Callabl
     expected_output = gen_paths.out_dir / Path("uavcan") / Path("test") / Path("TestType_0_8.hpp")
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -591,7 +591,7 @@ def test_generate_support_only(gen_paths: Any, run_nnvg_main: Callable) -> None:
     expected_output = sorted([support_path / Path("serialization").with_suffix(".h")])
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--outdir",
         gen_paths.out_dir.as_posix(),
         "--target-language",
@@ -618,7 +618,7 @@ def test_generate_support(
     type_output = [test_type_path / Path("TestType_0_8.h")]
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--outdir",
         gen_paths.out_dir.as_posix(),
         "--target-language",
@@ -656,7 +656,7 @@ def test_issue_73(gen_paths: Any, run_nnvg_main: Callable) -> None:
     Verify that https://github.com/OpenCyphal/nunavut/issues/73 hasn't regressed.
     """
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--outdir",
         gen_paths.out_dir.as_posix(),
         "--lookup-dir",
@@ -685,7 +685,7 @@ def test_issue_116(gen_paths: Any, run_nnvg_main: Callable) -> None:
 
     # Happy path
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--outdir",
         gen_paths.out_dir.as_posix(),
         "--output-extension",
@@ -729,7 +729,7 @@ def test_language_allow_unregulated_fixed_port_id(gen_paths: Any, run_nnvg_main:
     ]
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--templates",
         gen_paths.templates_dir.as_posix(),
         "--outdir",
@@ -760,7 +760,7 @@ def test_list_configuration(gen_paths: Any, run_nnvg_main: Callable) -> None:
     """
     import yaml  # pylint: disable=import-outside-toplevel
 
-    nnvg_args = ["--disable-legacy-mode", "--list-configuration"]
+    nnvg_args = ["--omit-deprecated", "--list-configuration"]
 
     completed = run_nnvg_main(gen_paths, nnvg_args).stdout.decode("utf-8").split(";")
     parsed_config = yaml.load("\n".join(completed), yaml.Loader)
@@ -781,7 +781,7 @@ def test_colon_syntax(gen_paths: Any, run_nnvg_main: Callable) -> None:
     ]
 
     nnvg_args = [
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         "--outdir",
         gen_paths.out_dir.as_posix(),
         "--target-language",

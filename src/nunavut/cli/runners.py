@@ -299,7 +299,7 @@ def new_runner(args: argparse.Namespace) -> Runner:
     """
     Create a new ArgparseRunner based on the arguments.
     """
-    if not args.disable_legacy_mode and hasattr(args, "legacy_mode") and args.legacy_mode:
+    if not args.omit_deprecated and hasattr(args, "legacy_mode") and args.legacy_mode:
         return LegacyArgparseRunner(args)
     return StandardArgparseRunner(args)
 

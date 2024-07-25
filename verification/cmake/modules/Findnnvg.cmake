@@ -57,11 +57,21 @@ function (create_dsdl_target ARG_TARGET_NAME
         endforeach(ARG_N)
     endif()
 
+    list(APPEND NNVG_CMD_ARGS --omit-dependencies)
     list(APPEND NNVG_CMD_ARGS --target-language)
     list(APPEND NNVG_CMD_ARGS ${ARG_OUTPUT_LANGUAGE})
     list(APPEND NNVG_CMD_ARGS  -O)
     list(APPEND NNVG_CMD_ARGS ${ARG_OUTPUT_FOLDER})
-    list(APPEND NNVG_CMD_ARGS ${ARG_DSDL_ROOT_DIR})
+
+    if (ARG_DSDL_ROOT_DIR STREQUAL "")
+        set(LOCAL_DSDL_FILES "")
+    else()
+        list(APPEND NNVG_CMD_ARGS -I)
+        list(APPEND NNVG_CMD_ARGS ${ARG_DSDL_ROOT_DIR})
+        file(GLOB_RECURSE LOCAL_DSDL_FILES CONFIGURE_DEPENDS "${ARG_DSDL_ROOT_DIR}/*.dsdl")
+        list(APPEND NNVG_CMD_ARGS ${LOCAL_DSDL_FILES})
+    endif()
+
 
     if (NOT "${ARG_SER_ENDIANNESS}" STREQUAL "")
         list(APPEND NNVG_CMD_ARGS "--target-endianness")
@@ -77,12 +87,12 @@ function (create_dsdl_target ARG_TARGET_NAME
 
     if (ARG_ENABLE_SER_ASSERT)
         list(APPEND NNVG_CMD_ARGS "--enable-serialization-asserts")
-        message(STATUS "nnvg:Enabling seralization asserts in generated code.")
+        message(STATUS "nnvg:Enabling serialization asserts in generated code.")
     endif()
 
     if (ARG_DISABLE_SER_FP)
         list(APPEND NNVG_CMD_ARGS "--omit-float-serialization-support")
-        message(STATUS "nnvg:Disabling floating point seralization routines in generated support code.")
+        message(STATUS "nnvg:Disabling floating point serialization routines in generated support code.")
     endif()
 
     if (ARG_ENABLE_OVR_VAR_ARRAY)

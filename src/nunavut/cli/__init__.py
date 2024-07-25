@@ -427,7 +427,8 @@ def _make_parser(parser_type: Type[ParserT]) -> ParserT:
         help=textwrap.dedent(
             """
 
-        Disables the generation of dependent types.
+        Disables the generation of dependent types. This is useful when setting up build
+        rules for a project where the dependent types are generated separately.
 
         This option is not available in legacy mode.
 
@@ -457,15 +458,11 @@ def _make_parser(parser_type: Type[ParserT]) -> ParserT:
     run_mode_group.add_argument("--dry-run", "-d", action="store_true", help="If True then no files will be generated.")
 
     run_mode_group.add_argument(
-        "--disable-legacy-mode",
+        "--omit-deprecated",
         action="store_true",
         help=textwrap.dedent(
             """
-        Disables automatic handling of legacy CLI inputs. Target files will
-        be required to perform code generation.
-
-        Use of this option is not recommended. It is provided for diagnostic
-        purposes only.
+        Disables deprecated features including automatic handling of legacy-mode CLI inputs.
 
     """
         ).lstrip(),
