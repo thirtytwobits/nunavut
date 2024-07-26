@@ -19,6 +19,7 @@ from nunavut import generate_types, generate_all, ResourceType
         ("cpp", ResourceType.ANY.value, {"std": "c++17"}),
         ("c", ResourceType.NONE.value, {}),
         ("c", ResourceType.ANY.value, {}),
+        ("c", ResourceType.SERIALIZATION_SUPPORT.value | ResourceType.TYPE_SUPPORT.value | ResourceType.ONLY.value, {}),
         ("py", ResourceType.ANY.value, {}),
         ("html", ResourceType.NONE.value, {}),
     ],
@@ -52,7 +53,7 @@ def test_realgen(
     )
 
     # We only expect one root namespace directory in the public regulated data types.
-    root_namespace_directories = {x[0] for x in result.target_files.values()}
+    root_namespace_directories = {x.target_file.path_to_namespace for x in result.generator_targets.values()}
     assert len(root_namespace_directories) == 1
     assert root_namespace_directories.pop().stem == "uavcan"
     assert (gen_paths.out_dir / Path("nunavut.make")).exists()

@@ -213,23 +213,26 @@ class Namespace(pydsdl.Any):
         nested._parent = self  # pylint: disable=protected-access
         return True
 
-    def add_data_type(self, dsdl_type: pydsdl.CompositeType, extension: Optional[str] = None) -> pydsdl.CompositeType:
+    def add_data_type(self, dsdl_type: pydsdl.CompositeType, extension: Optional[str] = None) -> Path:
         """
         Add a datatype to this namespace.
 
         :param pydsdl.CompositeType dsdl_type: The datatype to add.
         :param str extension: The file extension to use for the generated file. If None, the
                                 extension will be determined by the target language.
-        :return: The datatype that was added.
+        :return: A path to the file this type will be generated in.
         """
+
+        language = self._language_context.get_target_language()
         if extension is None:
-            extension = self._language_context.get_target_language().get_config_value(
+            extension = language.get_config_value(
                 Language.WKCV_DEFINITION_FILE_EXTENSION
             )
-        self._data_type_to_outputs[dsdl_type] = Path(self._base_output_path) / IncludeGenerator.make_path(
-            dsdl_type, self._language_context.get_target_language(), extension
+        output_file = Path(self._base_output_path) / IncludeGenerator.make_path(
+            dsdl_type, language, extension
         )
-        return dsdl_type
+        self._data_type_to_outputs[dsdl_type] = output_file
+        return output_file
 
     # +-----------------------------------------------------------------------+
     # | DUCK TYPING: pydsdl.CompositeType
@@ -378,8 +381,7 @@ class NamespaceFactory:
         nsf = NamespaceFactory(lctx, base_path, root_namespace_dir)
 
         assert nsf.get_root_namespace() is not None
-        uavcan_ns, did_exist = nsf.get_or_make_namespace("uavcan")
-        assert not did_exist
+        uavcan_ns = nsf.get_or_make_namespace("uavcan")
         assert uavcan_ns is not None
         assert uavcan_ns.short_name == "uavcan"
 
@@ -406,6 +408,28 @@ class NamespaceFactory:
         Namespace object for the empty namespace.
         """
         return self.get_or_make_namespace("")
+
+    def add_types(self, types: Iterable[pydsdl.CompositeType]) -> Namespace:
+        """
+        Adds dsdl types to a namespace tree building new nodes as needed.
+
+        :param list types: A list of pydsdl types.
+        :return: The root :class:`nunavut.Namespace` as returned from :meth:`NamespaceFactory.get_root_namespace`
+            but after new nodes have been added.
+        """
+        for dsdl_type in types:
+            # For each type we form a path with the output_dir as the base; the intermediate
+            # folders named for the type's namespaces; and a file name that includes the type's
+            # short name, major version, minor version, and the extension argument as a suffix.
+            # Python's pathlib adapts the provided folder and file names to the platform
+            # this script is running on.
+            # We also, lazily, generate Namespace nodes as we encounter new namespaces for the
+            # first time.
+
+            namespace = self.get_or_make_namespace(dsdl_type.full_namespace)
+            namespace.add_data_type(dsdl_type)
+
+        return self.get_root_namespace()
 
     def get_or_make_namespace(self, full_namespace: str) -> Namespace:
         """
@@ -438,28 +462,6 @@ class NamespaceFactory:
             ancestor = parent
 
         return namespace
-
-    def add_types(self, types: Iterable[pydsdl.CompositeType]) -> Namespace:
-        """
-        Adds dsdl types to a namespace tree building new nodes as needed.
-
-        :param list types: A list of pydsdl types.
-        :return: The root :class:`nunavut.Namespace` as returned from :meth:`NamespaceFactory.get_root_namespace`
-            but after new nodes have been added.
-        """
-        for dsdl_type in types:
-            # For each type we form a path with the output_dir as the base; the intermediate
-            # folders named for the type's namespaces; and a file name that includes the type's
-            # short name, major version, minor version, and the extension argument as a suffix.
-            # Python's pathlib adapts the provided folder and file names to the platform
-            # this script is running on.
-            # We also, lazily, generate Namespace nodes as we encounter new namespaces for the
-            # first time.
-
-            namespace = self.get_or_make_namespace(dsdl_type.full_namespace)
-            namespace.add_data_type(dsdl_type)
-
-        return self.get_root_namespace()
 
 
 def build_namespace_tree(

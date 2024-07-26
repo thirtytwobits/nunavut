@@ -283,9 +283,9 @@ class StandardArgparseRunner(Runner):
 
         elif self._args.list_inputs:
             input_dsdl = set()
-            for target, dependencies in result.target_files.items():
-                input_dsdl.add(target)
-                input_dsdl.update({d.source_file_path for d in dependencies[1]})
+            for target_path, target_data in result.generator_targets.items():
+                input_dsdl.add(target_path)
+                input_dsdl.update({d.source_file_path for d in target_data.dsdl_dependencies})
             self.stdout_lister(
                 itertools.chain(
                     iter(result.template_files),
