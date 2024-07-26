@@ -468,6 +468,19 @@ def _make_parser(parser_type: Type[ParserT]) -> ParserT:
         ).lstrip(),
     )
 
+    run_mode_group.add_argument(
+        "-M",
+        "--depfile",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+        Emits a makefile compatible dependency file for the generated files. Use with --dry-run to
+        generate a list of dependencies for a build system.
+
+    """
+        ).lstrip(),
+    )
+
     run_mode_ex_group = run_mode_group.add_mutually_exclusive_group()
 
     run_mode_ex_group.add_argument(

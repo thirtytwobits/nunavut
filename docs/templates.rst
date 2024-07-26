@@ -505,10 +505,7 @@ If the :code:`generate_namespace_types` parameter of :class:`~nunavut.jinja.Gene
 nested namespaces regardless of language. :code:`NO` suppresses this behavior and :code:`DEFAULT`
 will choose the behavior based on the target language. For example::
 
-    root_namespace = build_namespace_tree(compound_types,
-                                          root_ns_folder,
-                                          out_dir,
-                                          language_context)
+    root_namespace = NamespaceFactory(language_context, out_dir, root_ns_folder).add_types(compound_types)
 
     generator = Generator(root_namespace, YesNoDefault.DEFAULT)
 

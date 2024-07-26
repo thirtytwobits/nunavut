@@ -19,7 +19,7 @@ from pydsdl import read_namespace as read_dsdl_namespace
 
 from nunavut._generators import AbstractGenerator as Generator
 from nunavut._generators import generate_all
-from nunavut._namespace import build_namespace_tree
+from nunavut._namespace import NamespaceFactory
 from nunavut._utilities import ResourceType
 from nunavut.lang import Language, LanguageContext, LanguageContextBuilder
 
@@ -176,7 +176,7 @@ class LegacyArgparseRunner(Runner):
         else:
             type_map = []
 
-        root_namespace = build_namespace_tree(type_map, str(root_namespace_path), self._args.outdir, lctx)
+        root_namespace = NamespaceFactory(lctx, self._args.outdir, root_namespace_path).add_types(type_map)
 
         #
         # nunavut : create generators
@@ -282,11 +282,14 @@ class StandardArgparseRunner(Runner):
             self.stdout_lister(result.generated_files, lambda p: str(p.resolve()), end="")
 
         elif self._args.list_inputs:
+            input_dsdl = set()
+            for target, dependencies in result.target_files.items():
+                input_dsdl.add(target)
+                input_dsdl.update({d.source_file_path for d in dependencies[1]})
             self.stdout_lister(
                 itertools.chain(
                     iter(result.template_files),
-                    map(lambda p: p.source_file_path, result.target_files),
-                    map(lambda p: p.source_file_path, result.dependent_files),
+                    iter(input_dsdl)
                 ),
                 lambda p: str(p.resolve()),
                 end="",

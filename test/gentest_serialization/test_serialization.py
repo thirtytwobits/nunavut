@@ -146,6 +146,6 @@ def test_gen_with_serialization_complex(gen_paths, lang_key):  # type: ignore
         include_experimental_languages=(lang_key == "cpp"),
     )
 
-    assert 4 == len(result.dependent_files)
+    assert 7 == len(result.target_files)
     # 8 is the number of dsdl types plus a serialization support file.
     assert 8 == len(result.generated_files)

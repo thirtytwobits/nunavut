@@ -14,13 +14,13 @@ import itertools
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Type, Union, cast
+from typing import Any, Iterable, Mapping, Optional, Tuple, Type, Union, cast
 
 from pydsdl import CompositeType
 from pydsdl import read_files as read_dsdl_files
 from pydsdl import read_namespace as read_dsdl_namespace
 
-from nunavut._namespace import Namespace, build_namespace_tree
+from nunavut._namespace import Namespace, NamespaceFactory, build_namespace_tree
 from nunavut._utilities import ResourceType, YesNoDefault
 from nunavut.lang import LanguageContext, LanguageContextBuilder
 from nunavut.lang._language import Language
@@ -48,15 +48,8 @@ class GenerationResult:
     lctx: LanguageContext
     """The language context used to generate outputs."""
 
-    target_files: list[DSDLFilePath]
-    """The set of explicit files targeted for generation."""
-
-    dependent_files: list[DSDLFilePath]
-    """
-    The set of files determined to be dependencies of one or more `target_files`. Note that no target file will be in
-    this list even if it is depended on by another target file. It is assumed that any target file may depend on any
-    other target file for a given use of the generation APIs.
-    """
+    target_files: dict[Path, Tuple[Path, list[DSDLFilePath]]]
+    """The set of explicit files targeted for generation and their dependant files."""
 
     generated_files: list[Path]
     """
@@ -66,11 +59,6 @@ class GenerationResult:
     template_files: list[Path]
     """
     The set of template files used to generate the `generated_files`.
-    """
-
-    root_namespace_directories: list[Path]
-    """
-    The set of root namespace directories used to generate the `generated_files`.
     """
 
 
@@ -158,6 +146,109 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         :raises: PermissionError if :attr:`allow_overwrite` is False and the file exists.
         """
         raise NotImplementedError()
+
+
+class MultiGenerator(AbstractGenerator):
+    """
+    A generator that combines multiple generators into a single generator.
+    """
+
+    def __init__(self, namespace: Namespace, resource_types: int, generators: Iterable[AbstractGenerator]):
+        super().__init__(namespace, resource_types)
+        self._generators = generators
+
+    def get_templates(self) -> Iterable[Path]:
+        return itertools.chain.from_iterable(gen.get_templates() for gen in self._generators)
+
+    def generate_all(self, is_dryrun: bool = False, allow_overwrite: bool = True) -> Iterable[Path]:
+        return itertools.chain.from_iterable(gen.generate_all(is_dryrun, allow_overwrite) for gen in self._generators)
+
+
+class MultiGeneratorBuilder:
+    """
+    A container for building MultiGenerators for different namespaces.
+    """
+
+    def __init__(self, language_context: LanguageContext, output_dir: Path) -> None:
+        self._language_context = language_context
+        self._generators: list[Type[AbstractGenerator], Any] = []
+        self._output_dir = output_dir
+        self._root_namespace_dir = Path("")
+        self._resource_types: int = ResourceType.ANY.value
+        self._dsdl_types: set[CompositeType] = set()
+        self._nsf: Optional[NamespaceFactory] = None
+
+    def __len__(self) -> int:
+        return len(self._generators)
+
+    def add_generator_type(self, generator_class: Type[AbstractGenerator], **overrides: Any) -> "MultiGeneratorBuilder":
+        """
+        Add a generator to the list of generators to combine.
+        """
+        self._generators.append((generator_class, overrides))
+        return self
+
+    def clear_generator_types(self) -> "MultiGeneratorBuilder":
+        """
+        Clear all generators from the builder.
+        """
+        self._generators.clear()
+        return self
+
+    def set_root_namespace_dir(self, root_namespace_dir: Path) -> "MultiGeneratorBuilder":
+        """
+        Set the root namespace directory for the generators.
+        """
+        if root_namespace_dir != self._root_namespace_dir:
+            self._nsf = None
+        self._root_namespace_dir = root_namespace_dir
+        return self
+
+    def unset_root_namespace_dir(self) -> "MultiGeneratorBuilder":
+        """
+        Unset the root namespace directory for the generators.
+        """
+        self._root_namespace_dir = Path("")
+        self._nsf = None
+        return self
+
+    def set_resource_types(self, resource_types: int) -> "MultiGeneratorBuilder":
+        """
+        Set the resource types for the generators.
+        """
+        self._resource_types = resource_types
+        return self
+
+    def update_dsdl_types(self, dsdl_types: list[CompositeType]) -> "MultiGeneratorBuilder":
+        """
+        Set the DSDL types for the generators.
+        """
+        self._dsdl_types.update(dsdl_types)
+        return self
+
+    def clear_dsdl_types(self) -> "MultiGeneratorBuilder":
+        """
+        Unset the DSDL types for the generators.
+        """
+        self._dsdl_types.clear()
+        return self
+
+    def create(
+        self,
+        **kwargs: Any,
+    ) -> MultiGenerator:
+        """
+        Create a new generator that combines all the generators added to this builder.
+        """
+        if self._nsf is None:
+            self._nsf = NamespaceFactory(self._language_context, self._output_dir, self._root_namespace_dir)
+        namespace = self._nsf.add_types(self._dsdl_types)
+        generators: list[AbstractGenerator] = []
+        for gen, overrides in self._generators:
+            args_copy = kwargs.copy()
+            args_copy.update(overrides)
+            generators.append(gen(namespace, self._resource_types, **args_copy))
+        return MultiGenerator(namespace, self._resource_types, generators)
 
 
 # +---------------------------------------------------------------------------+
@@ -260,15 +351,18 @@ def generate_types(
     generated_files += list(generator.generate_all(is_dryrun, allow_overwrite))
     return GenerationResult(
         language_context,
-        [DSDLFilePath(ct.source_file_path_to_root, ct.source_file_path) for ct in type_map],
-        [],
+        dict(
+            zip(
+                map(lambda ct: ct.source_file_path, type_map),
+                map(lambda ct: (ct.source_file_path_to_root, []), type_map),
+            )
+        ),
         generated_files,
         template_files,
-        [],
     )
 
 
-# pylint: disable=too-many-arguments, too-many-locals
+# pylint: disable=too-many-arguments, too-many-locals, too-many-statements
 def generate_all(
     target_language: str,
     target_files: Iterable[Union[str, Path]],
@@ -284,6 +378,7 @@ def generate_all(
     code_generator_type: Optional[Type[AbstractGenerator]] = None,
     support_generator_type: Optional[Type[AbstractGenerator]] = None,
     generate_namespace_types: YesNoDefault = YesNoDefault.DEFAULT,
+    depfile: bool = False,
     **kwargs: Any,
 ) -> GenerationResult:
     """
@@ -359,107 +454,140 @@ def generate_all(
     support_kwargs = kwargs.copy()
     support_kwargs["templates_dir"] = kwargs.get("support_templates_dir", [])
 
-    if resource_types & ResourceType.ANY.value:
-        if support_generator_type is None:
-            from nunavut.jinja import SupportGenerator  # pylint: disable=import-outside-toplevel
+    language_context = (
+        LanguageContextBuilder(include_experimental_languages=include_experimental_languages)
+        .set_target_language(target_language)
+        .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, language_options)
+        .create()
+    )
 
-            support_generator_type_resolved = cast(type[AbstractGenerator], SupportGenerator)
-        else:
-            support_generator_type_resolved = support_generator_type
-    else:
-        support_generator_type_resolved = None
+    def _write_dep_file_maybe(generation_result: GenerationResult) -> GenerationResult:
+        """
+        Write a .dep file to the output directory containing the paths of all generated files and the template files
+        used to generate them.
 
-    if not resource_types & ResourceType.ONLY.value:
-        if code_generator_type is None:
-            from nunavut.jinja import DSDLCodeGenerator  # pylint: disable=import-outside-toplevel
+        :param GenerationResult generation_result: The result of a generation operation to record in the dep file.
+        """
 
-            code_generator_type_resolved = cast(type[AbstractGenerator], DSDLCodeGenerator)
-        else:
-            code_generator_type_resolved = code_generator_type
-    else:
-        code_generator_type_resolved = None
+        if depfile:
+            depfile_path = outdir / "nunavut.make"
+            with depfile_path.open("w", encoding="utf-8") as f:
+                # Full manifest in comments
+                f.write("# Generated Files:\n")
+                for file in generation_result.generated_files:
+                    f.write(f"#  - {file}\n")
+                f.write("\nTemplate Files:\n")
+                for file in generation_result.template_files:
+                    f.write(f"#  - {file}\n")
 
-    if code_generator_type_resolved is None and support_generator_type_resolved is None:
+        return generation_result
+
+    def _create_multigen_builder() -> MultiGeneratorBuilder:
+        """
+        Create a MultiGeneratorBuilder with the selected generator types.
+        """
+        multigen_builder = MultiGeneratorBuilder(language_context, outdir)
+        if resource_types & ResourceType.ANY.value:
+            if support_generator_type is None:
+                from nunavut.jinja import SupportGenerator  # pylint: disable=import-outside-toplevel
+
+                support_generator_type_resolved = cast(type[AbstractGenerator], SupportGenerator)
+            else:
+                support_generator_type_resolved = support_generator_type
+
+            multigen_builder.add_generator_type(
+                cast(type[AbstractGenerator], support_generator_type_resolved),
+                templates_dir=kwargs.get("support_templates_dir", []),
+            )
+
+        if not resource_types & ResourceType.ONLY.value:
+            if code_generator_type is None:
+                from nunavut.jinja import DSDLCodeGenerator  # pylint: disable=import-outside-toplevel
+
+                code_generator_type_resolved = cast(type[AbstractGenerator], DSDLCodeGenerator)
+            else:
+                code_generator_type_resolved = code_generator_type
+
+            multigen_builder.add_generator_type(cast(type[AbstractGenerator], code_generator_type_resolved))
+
+        return multigen_builder.set_resource_types(resource_types)
+
+    multigen_builder = _create_multigen_builder()
+    if len(multigen_builder) == 0:
         logging.warning(
             "No resource types selected for generation and code generation was disabled. Nothing to do. This was a "
             "useless call to generate_all()."
         )
     else:
-        language_context = (
-            LanguageContextBuilder(include_experimental_languages=include_experimental_languages)
-            .set_target_language(target_language)
-            .set_target_language_configuration_override(Language.WKCV_LANGUAGE_OPTIONS, language_options)
-            .create()
-        )
 
-        dsdl_files_by_namespace: dict[Path, list[CompositeType]] = {}
+        target_file_queue = [Path(target_file) for target_file in target_files]
+        dependency_graph: dict[Path, Tuple[Path, list[DSDLFilePath]]] = {}
+        multi_generator_builder_index: dict[Path, MultiGeneratorBuilder] = {}
 
-        target_dsdl_files, dependent_dsdl_files = read_dsdl_files(
-            target_files,
-            root_namespace_directories_or_names,
-            allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
-        )
+        while len(target_file_queue) > 0:
 
-        if len(target_dsdl_files) > 0 or len(dependent_dsdl_files) > 0:
+            target_file = target_file_queue.pop(0)
+
+            if target_file in dependency_graph:
+                # TODO handle path resolution (i.e. is same file but different path)
+                continue
+
+            target_dsdl_types, dependent_dsdl_types_for_target = read_dsdl_files(
+                target_file,
+                root_namespace_directories_or_names,
+                allow_unregulated_fixed_port_id=allow_unregulated_fixed_port_id,
+            )
+
+            assert len(target_dsdl_types) == 1
+
+            target_dsdl_type = target_dsdl_types[0]
+
+            dependency_graph[target_dsdl_type.source_file_path] = (
+                target_dsdl_type.source_file_path_to_root,
+                [
+                    DSDLFilePath(dep.source_file_path_to_root, dep.source_file_path)
+                    for dep in dependent_dsdl_types_for_target
+                ],
+            )
+
             if not kwargs.get("omit_dependencies", False):
-                # Normally we generated all files including the targest and the transitive closure of their
-                # dependencies.
-                files_to_generate = itertools.chain(target_dsdl_files, dependent_dsdl_files)
-            else:
-                # If we are omit(ting)_dependencies then we only generate the target files.
-                files_to_generate = target_dsdl_files
+                target_file_queue.extend([dep.source_file_path for dep in dependent_dsdl_types_for_target])
+            # elif we are omit(ting)_dependencies then we only generate the target files.
 
-            # Because we have to build a namespace object for each root namespace we need to group the files by
-            # the set of all root namespaces they are under.
-            for dsdl_file in files_to_generate:
-                root_path = dsdl_file.source_file_path_to_root
-                dsdl_files_by_namespace.setdefault(root_path, []).append(dsdl_file)
+            try:
+                multi_generator_builder_index[target_dsdl_type.source_file_path_to_root].update_dsdl_types(
+                    target_dsdl_types
+                )
+            except KeyError:
+                multi_generator_builder_index[target_dsdl_type.source_file_path_to_root] = (
+                    _create_multigen_builder()
+                    .update_dsdl_types(target_dsdl_types)
+                    .set_root_namespace_dir(target_dsdl_type.source_file_path_to_root)
+                )
 
-            for root_namespace_dir, dsdl_files in dsdl_files_by_namespace.items():
-                namespace = build_namespace_tree(dsdl_files, str(root_namespace_dir), str(outdir), language_context)
-
-                if support_generator_type_resolved is not None:
-                    support_generator = support_generator_type_resolved(
-                        namespace,
-                        resource_types,
-                        generate_namespace_types=generate_namespace_types,
-                        embed_auditing_info=embed_auditing_info,
-                        **support_kwargs,
-                    )
-                    template_files.update(support_generator.get_templates())
-                    generated_files.update(support_generator.generate_all(dry_run, not no_overwrite))
-
-                if code_generator_type_resolved is not None:
-                    generator = code_generator_type_resolved(
-                        namespace,
-                        generate_namespace_types=generate_namespace_types,
-                        embed_auditing_info=embed_auditing_info,
-                        **kwargs,
-                    )
-                    template_files.update(generator.get_templates())
-                    generated_files.update(generator.generate_all(dry_run, not no_overwrite))
+        if len(multi_generator_builder_index) == 0:
+            multi_generator = _create_multigen_builder().create(
+                generate_namespace_types=generate_namespace_types,
+                embed_auditing_info=embed_auditing_info,
+                **kwargs,
+            )
+            template_files.update(multi_generator.get_templates())
+            generated_files.update(multi_generator.generate_all(dry_run, not no_overwrite))
         else:
-            # If no target files are provided then we can't generate source from dsdl. We can only generate support
-            # files if needed.
-            if support_generator_type_resolved is not None:
-                namespace = build_namespace_tree([], "", str(outdir), language_context)
-                support_generator = support_generator_type_resolved(
-                    namespace,
-                    resource_types,
+            for multigen_builder in multi_generator_builder_index.values():
+                multi_generator = multigen_builder.create(
                     generate_namespace_types=generate_namespace_types,
                     embed_auditing_info=embed_auditing_info,
-                    **support_kwargs,
+                    **kwargs,
                 )
-                template_files.update(support_generator.get_templates())
-                generated_files.update(support_generator.generate_all(dry_run, not no_overwrite))
-            else:
-                logging.info("No target files provided and no support files would be generated. Nothing to do.")
+                template_files.update(multi_generator.get_templates())
+                generated_files.update(multi_generator.generate_all(dry_run, not no_overwrite))
 
-    return GenerationResult(
-        language_context,
-        [DSDLFilePath(ct.source_file_path_to_root, ct.source_file_path) for ct in target_dsdl_files],
-        [DSDLFilePath(ct.source_file_path_to_root, ct.source_file_path) for ct in dependent_dsdl_files],
-        list(generated_files),
-        list(template_files),
-        list(dsdl_files_by_namespace.keys()),
+    return _write_dep_file_maybe(
+        GenerationResult(
+            language_context,
+            dependency_graph,
+            list(generated_files),
+            list(template_files),
+        )
     )

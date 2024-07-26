@@ -48,11 +48,14 @@ def test_realgen(
         resource_types=resource_types,
         language_options=language_options,
         include_experimental_languages=True,
+        depfile=True
     )
 
     # We only expect one root namespace directory in the public regulated data types.
-    assert len(result.root_namespace_directories) == 1
-    assert result.root_namespace_directories[0].stem == "uavcan"
+    root_namespace_directories = {x[0] for x in result.target_files.values()}
+    assert len(root_namespace_directories) == 1
+    assert root_namespace_directories.pop().stem == "uavcan"
+    assert (gen_paths.out_dir / Path("nunavut.make")).exists()
 
 
 def test_realgen_heartbeat(

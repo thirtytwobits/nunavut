@@ -21,7 +21,7 @@ from ._generators import AbstractGenerator
 from ._generators import generate_types
 from ._generators import generate_all
 from ._namespace import Namespace
-from ._namespace import build_namespace_tree
+from ._namespace import NamespaceFactory
 from ._utilities import TEMPLATE_SUFFIX
 from ._utilities import DefaultValue
 from ._utilities import ResourceType
@@ -48,7 +48,6 @@ __version_info__ = tuple(map(int, __version__.split(".")[:3]))
 
 __all__ = [
     "AbstractGenerator",
-    "build_namespace_tree",
     "CodeGenerator",
     "DefaultValue",
     "DSDLCodeGenerator",
@@ -59,6 +58,7 @@ __all__ = [
     "LanguageContext",
     "LanguageContextBuilder",
     "Namespace",
+    "NamespaceFactory",
     "ResourceType",
     "SupportGenerator",
     "TEMPLATE_SUFFIX",

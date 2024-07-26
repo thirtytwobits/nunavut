@@ -12,7 +12,7 @@ from pathlib import Path, PurePath
 import pytest
 from pydsdl import read_namespace
 
-from nunavut import Namespace, build_namespace_tree
+from nunavut import Namespace, NamespaceFactory
 from nunavut.jinja import DSDLCodeGenerator
 from nunavut.jinja.jinja2.exceptions import TemplateAssertionError
 from nunavut.lang import Language, LanguageClassLoader, LanguageContextBuilder
@@ -30,7 +30,8 @@ def test_template_assert(gen_paths):  # type: ignore
         .set_target_language_configuration_override(Language.WKCV_DEFINITION_FILE_EXTENSION, ".json")
         .create()
     )
-    namespace = build_namespace_tree(compound_types, root_path, output_path, language_context)
+    namespace = namespace = NamespaceFactory(language_context, output_path, root_path).add_types(compound_types)
+
     template_path = gen_paths.templates_dir / Path("assert")
     generator = DSDLCodeGenerator(namespace, templates_dir=template_path)
     try:
@@ -51,7 +52,7 @@ def test_type_to_include(gen_paths):  # type: ignore
         .set_target_language_configuration_override(Language.WKCV_DEFINITION_FILE_EXTENSION, ".json")
         .create()
     )
-    namespace = build_namespace_tree(compound_types, root_path, output_path, language_context)
+    namespace = namespace = NamespaceFactory(language_context, output_path, root_path).add_types(compound_types)
     template_path = gen_paths.templates_dir / Path("type_to_include")
     generator = DSDLCodeGenerator(namespace, templates_dir=template_path)
     generator.generate_all()
@@ -75,7 +76,7 @@ def test_custom_filter_and_test(gen_paths):  # type: ignore
         .set_target_language_configuration_override(Language.WKCV_DEFINITION_FILE_EXTENSION, ".json")
         .create()
     )
-    namespace = build_namespace_tree(compound_types, root_path, output_path, language_context)
+    namespace = namespace = NamespaceFactory(language_context, output_path, root_path).add_types(compound_types)
     template_path = gen_paths.templates_dir / Path("custom_filter_and_test")
     generator = DSDLCodeGenerator(
         namespace,
@@ -309,7 +310,7 @@ def test_filter_full_reference_name_via_template(gen_paths, language_name, names
     language_context = (
         LanguageContextBuilder(include_experimental_languages=True).set_target_language(language_name).create()
     )
-    namespace = build_namespace_tree(compound_types, root_path, output_path, language_context)
+    namespace = namespace = NamespaceFactory(language_context, output_path, root_path).add_types(compound_types)
     template_path = gen_paths.templates_dir / Path("full_reference_test")
     generator = DSDLCodeGenerator(namespace, templates_dir=template_path)
 
@@ -406,7 +407,7 @@ def test_filter_to_template_unique(gen_paths):
     output_path = gen_paths.out_dir / "to_unique"
     compound_types = read_namespace(root_path, [])
     language_context = LanguageContextBuilder(include_experimental_languages=True).set_target_language("c").create()
-    namespace = build_namespace_tree(compound_types, root_path, output_path, language_context)
+    namespace = namespace = NamespaceFactory(language_context, output_path, root_path).add_types(compound_types)
     template_path = gen_paths.templates_dir / Path("to_unique")
     generator = DSDLCodeGenerator(namespace, templates_dir=template_path)
     generator.generate_all()
