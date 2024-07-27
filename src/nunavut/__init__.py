@@ -25,6 +25,7 @@ from ._namespace import NamespaceFactory
 from ._utilities import TEMPLATE_SUFFIX
 from ._utilities import DefaultValue
 from ._utilities import ResourceType
+from ._utilities import ResourceSearchPolicy
 from ._utilities import YesNoDefault
 from ._version import __author__
 from ._version import __copyright__
@@ -60,6 +61,7 @@ __all__ = [
     "Namespace",
     "NamespaceFactory",
     "ResourceType",
+    "ResourceSearchPolicy",
     "SupportGenerator",
     "TEMPLATE_SUFFIX",
     "UnsupportedLanguageError",

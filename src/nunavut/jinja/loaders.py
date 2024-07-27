@@ -8,12 +8,11 @@ Contains template loaders for Nunavut's Jinja2 environment.
 """
 
 import collections
-import functools
 import importlib
 import itertools
 import logging
 from pathlib import Path
-from typing import Any, Callable, Deque, Dict, Iterable, Mapping, Optional, Tuple, Type, cast
+from typing import Any, Callable, Deque, Dict, Iterable, Mapping, Optional, Tuple, Type, cast, Union
 
 import pydsdl
 
@@ -51,7 +50,7 @@ class DSDLTemplateLoader(BaseLoader):
         templates from. This is ignored if ``namespace`` is None.
     :param search_policy: If set to "FIND_ALL" then this loader will search using all loaders and will enumerate
                           templates from all loaders. If set to "FIND_FIRST" then the loader will only use the first
-                          loader configure for both search and enumeration.
+                          loader configured for both search and enumeration.
     :param str encoding: The encoding to use when reading templates from the filesystem.
     :param Any kwargs: Arguments forwarded to the :class:`jinja.jinja2.BaseLoader`.
     """
@@ -238,19 +237,32 @@ class DSDLTemplateLoader(BaseLoader):
             assert template_name.name == 'StructureType.j2'
 
         """
-        template_path = None
-        if self._fs_loader is not None:
-            filtered_templates = map(Path, self._filter_template_list_by_suffix(self._fs_loader.list_templates()))
-            template_path = self._type_to_template_internal(
-                value_type, dict(map(lambda x: (x.stem, x), filtered_templates))
-            )
-        if template_path is None and self._package_loader is not None:
-            filtered_templates = map(Path, self._filter_template_list_by_suffix(self._package_loader.list_templates()))
-            template_path = self._type_to_template_internal(
-                value_type, dict(map(lambda x: (x.stem, x), filtered_templates))
-            )
+        return self._to_template(self._type_to_template_internal, value_type)
 
-        return template_path
+    def allfile_to_template(self, allfile: Path) -> Optional[Path]:
+        """
+        Given an allfile output path, return a template used to render the allfile.
+
+        :return: a template or None if no template could be found for the given allfile.
+
+        .. invisible-code-block: python
+            from nunavut.jinja.loaders import DSDLTemplateLoader
+            import pydsdl
+            from pathlib import Path
+            from unittest.mock import MagicMock
+
+            mock_namespace = MagicMock()
+            mock_get_target_language = mock_namespace.get_language_context.return_value.get_target_language
+            mock_get_target_language.return_value.get_templates_package_name.return_value = 'nunavut.lang.c'
+
+            l = DSDLTemplateLoader(namespace=mock_namespace)
+            template_name = l.allfile_to_template(Path("depfile.dep"))
+
+            assert template_name is not None
+            assert template_name.name == 'depfile.j2'
+
+        """
+        return self._to_template(self._allfile_to_template_internal, allfile)
 
     # +----------------------------------------------------------------------------------------------------------------+
     # | PRIVATE
@@ -258,6 +270,28 @@ class DSDLTemplateLoader(BaseLoader):
     @classmethod
     def _filter_template_list_by_suffix(cls, template_list: Iterable[str]) -> Iterable[str]:
         return filter(lambda x: Path(x).suffix == TEMPLATE_SUFFIX, template_list)
+
+    def _to_template(
+        self, converter: Callable[[Union[Type, Path], Mapping[str, Path]], Optional[Path]], value: Union[Type, Path]
+    ) -> Optional[Path]:
+        template_path = None
+        if self._fs_loader is not None:
+            filtered_templates = map(Path, self._filter_template_list_by_suffix(self._fs_loader.list_templates()))
+            template_path = converter(value, dict(map(lambda x: (x.stem, x), filtered_templates)))
+        if template_path is None and self._package_loader is not None:
+            filtered_templates = map(Path, self._filter_template_list_by_suffix(self._package_loader.list_templates()))
+            template_path = converter(value, dict(map(lambda x: (x.stem, x), filtered_templates)))
+        return template_path
+
+    def _allfile_to_template_internal(self, allfile: Path, templates: Mapping[str, Path]) -> Optional[Path]:
+        try:
+            return templates[allfile.stem]
+        except KeyError:
+            pass
+        try:
+            return templates["All"]
+        except KeyError:
+            return None
 
     def _type_to_template_internal(self, value_type: Type, templates: Mapping[str, Path]) -> Optional[Path]:
         search_queue: Deque[Type] = collections.deque()

@@ -96,6 +96,7 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         namespace: Namespace,
         resource_types: int,
         generate_namespace_types: YesNoDefault = YesNoDefault.DEFAULT,
+        allfile: Optional[Iterable[Path]] = None,
         **kwargs: Any,
     ):  # pylint: disable=unused-argument
         self._namespace = namespace
@@ -110,6 +111,7 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
                 self._generate_namespace_types = True
             else:
                 self._generate_namespace_types = False
+        self._allfiles = [Path(p) for p in allfile] or []
 
     @property
     def namespace(self) -> Namespace:
@@ -133,6 +135,14 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         will be generated.
         """
         return self._generate_namespace_types
+
+    @property
+    def allfiles(self) -> list[Path]:
+        """
+        A list of paths to files that should be generated, relative to the output directory, which are given access
+        to the full namespace context rather than per-type context.
+        """
+        return self._allfiles
 
     @abc.abstractmethod
     def get_templates(self) -> Iterable[Path]:
@@ -580,11 +590,9 @@ def generate_all(
             template_files.update(multi_generator.get_templates())
             generated_files.update(multi_generator.generate_all(dry_run, not no_overwrite))
 
-    return _write_dep_file_maybe(
-        GenerationResult(
-            language_context,
-            generator_targets,
-            list(generated_files),
-            list(template_files),
-        )
+    return GenerationResult(
+        language_context,
+        generator_targets,
+        list(generated_files),
+        list(template_files),
     )

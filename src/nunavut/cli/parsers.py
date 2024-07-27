@@ -22,7 +22,7 @@ from nunavut._postprocessors import (
     SetFileMode,
     TrimTrailingWhitespace,
 )
-from nunavut._utilities import DefaultValue, ResourceType, QuaternaryLogic, YesNoDefault
+from nunavut._utilities import DefaultValue, QuaternaryLogic, ResourceSearchPolicy, ResourceType, YesNoDefault
 
 
 class NunavutArgumentParser(argparse.ArgumentParser):
@@ -55,6 +55,9 @@ class NunavutArgumentParser(argparse.ArgumentParser):
     - **post_processors**
         A list of post processors to run on generated files.
 
+    - **search_policy**
+        The ResourceSearchPolicy to use when searching for templates.
+
     Arguments Removed
     -----------------
 
@@ -66,6 +69,9 @@ class NunavutArgumentParser(argparse.ArgumentParser):
 
     - **lookup_dir**
         The original argument is replaced with root_namespace_directories_or_names.
+
+    - **fallback_to_builtin_templates**
+        Transformed into search_policy
 
     - **pp_trim_trailing_whitespace**
         The original arguments are replaced with post_processors.
@@ -126,6 +132,13 @@ class NunavutArgumentParser(argparse.ArgumentParser):
 
         if args.list_inputs:
             args.dry_run = True
+
+        if args.fallback_to_builtin_templates:
+            args.search_policy = ResourceSearchPolicy.FIND_ALL
+        else:
+            args.search_policy = ResourceSearchPolicy.FIND_FIRST
+
+        del args.fallback_to_builtin_templates
 
         # Convert omit_serialization_support and generate_support to resource_types bitmask.
         args.resource_types = self._create_resource_types_bitmask(args)

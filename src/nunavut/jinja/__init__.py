@@ -13,7 +13,7 @@ import io
 import logging
 import re
 import shutil
-import typing
+from typing import Any, Iterable, Optional, Tuple, Union, Generator, TextIO, Dict, Callable, Type, Mapping
 from pathlib import Path
 
 import pydsdl
@@ -26,7 +26,7 @@ from nunavut._postprocessors import FilePostProcessor, LinePostProcessor, PostPr
 from nunavut._utilities import TEMPLATE_SUFFIX, ResourceSearchPolicy, ResourceType, YesNoDefault
 
 from .environment import CodeGenEnvironment, CodeGenEnvironmentBuilder
-from .jinja2 import Template
+from .jinja2 import TemplateNotFound
 from .loaders import DEFAULT_TEMPLATE_PATH, DSDLSupportTemplateLoader, DSDLTemplateLoader
 
 logger = logging.getLogger(__name__)
@@ -52,8 +52,8 @@ class CodeGenerator(AbstractGenerator):
                                            at these paths will take precedence masking any built-in templates
                                            where the names are the same. See :class:`jinja2.ChoiceLoader` for rules
                                            on the lookup hierarchy.
-    :type templates_dir: typing.Optional[typing.Union[Path,list[Path]]]
-    :param typing.Optional[typing.Type[DSDLTemplateLoader]] template_loader:
+    :type templates_dir: Optional[Union[Path,list[Path]]]
+    :param Optional[Type[DSDLTemplateLoader]] template_loader:
         If None uses an internal default implementation of :class:`DSDLTemplateLoader` otherwise instantiates the given
         class with the arguments specified by the :class:`DSDLTemplateLoader` constructor.
     :param bool followlinks:               If True then symbolic links will be followed when
@@ -63,16 +63,16 @@ class CodeGenerator(AbstractGenerator):
     :param bool lstrip_blocks:             If this is set to True leading spaces and tabs
                                            are stripped from the start of a line to a block.
                                            Defaults to False.
-    :param typing.Dict[str, typing.Callable] additional_filters: typing.Optional jinja filters to add to the
+    :param Dict[str, Callable] additional_filters: Optional jinja filters to add to the
                                            global environment using the key as the filter name
                                            and the callable as the filter.
-    :param typing.Dict[str, typing.Callable] additional_tests: typing.Optional jinja tests to add to the
+    :param Dict[str, Callable] additional_tests: Optional jinja tests to add to the
                                            global environment using the key as the test name
                                            and the callable as the test.
-    :param typing.Dict[str, typing.Any] additional_globals: typing.Optional objects to add to the template
+    :param Dict[str, Any] additional_globals: Optional objects to add to the template
                                             environment globals collection.
     :param post_processors: A list of :class:`nunavut.postprocessors.PostProcessor`
-    :type post_processors: typing.Optional[list[nunavut.postprocessors.PostProcessor]]
+    :type post_processors: Optional[list[nunavut.postprocessors.PostProcessor]]
     :param builtin_template_path: If provided overrides the folder name under which built-in templates are loaded from
                                             within a target language's package (i.e. ignored if no target language is
                                             specified). For example, if the target language is ``c`` and this parameter
@@ -89,7 +89,7 @@ class CodeGenerator(AbstractGenerator):
 
     @staticmethod
     def __augment_post_processors_with_ln_limit_empty_lines(
-        post_processors: typing.Optional[list[PostProcessor]], limit_empty_lines: int
+        post_processors: Optional[list[PostProcessor]], limit_empty_lines: int
     ) -> list[PostProcessor]:
         """
         Subroutine of _handle_post_processors method.
@@ -110,7 +110,7 @@ class CodeGenerator(AbstractGenerator):
 
     @staticmethod
     def __augment_post_processors_with_ln_trim_trailing_whitespace(
-        post_processors: typing.Optional[list[PostProcessor]],
+        post_processors: Optional[list[PostProcessor]],
     ) -> list[PostProcessor]:
         """
         Subroutine of _handle_post_processors method.
@@ -133,8 +133,8 @@ class CodeGenerator(AbstractGenerator):
     def _handle_post_processors(
         cls,
         target_language: "nunavut.lang.Language",
-        post_processors: typing.Optional[list["PostProcessor"]],
-    ) -> typing.Optional[list["PostProcessor"]]:
+        post_processors: Optional[list["PostProcessor"]],
+    ) -> Optional[list["PostProcessor"]]:
         """
         Used by constructor to process an optional list of post-processors and to augment or create this list
         if needed to support language options.
@@ -157,19 +157,19 @@ class CodeGenerator(AbstractGenerator):
         namespace: nunavut.Namespace,
         resource_types: int = ResourceType.ANY.value,
         generate_namespace_types: YesNoDefault = YesNoDefault.DEFAULT,
-        templates_dir: typing.Optional[typing.Union[Path, list[Path]]] = None,
-        template_loader: typing.Optional[typing.Type[DSDLTemplateLoader]] = None,
+        templates_dir: Optional[Union[Path, list[Path]]] = None,
+        template_loader: Optional[Type[DSDLTemplateLoader]] = None,
         followlinks: bool = False,
         trim_blocks: bool = False,
         lstrip_blocks: bool = False,
-        additional_filters: typing.Optional[typing.Dict[str, typing.Callable]] = None,
-        additional_tests: typing.Optional[typing.Dict[str, typing.Callable]] = None,
-        additional_globals: typing.Optional[typing.Dict[str, typing.Any]] = None,
-        post_processors: typing.Optional[list["PostProcessor"]] = None,
+        additional_filters: Optional[Dict[str, Callable]] = None,
+        additional_tests: Optional[Dict[str, Callable]] = None,
+        additional_globals: Optional[Dict[str, Any]] = None,
+        post_processors: Optional[list["PostProcessor"]] = None,
         builtin_template_path: str = DEFAULT_TEMPLATE_PATH,
         search_policy: ResourceSearchPolicy = ResourceSearchPolicy.FIND_ALL,
         embed_auditing_info: bool = False,
-        **kwargs: typing.Any,
+        **kwargs: Any,
     ):
         super().__init__(namespace, resource_types, generate_namespace_types, **kwargs)
 
@@ -245,7 +245,7 @@ class CodeGenerator(AbstractGenerator):
     # | AbstractGenerator
     # +-----------------------------------------------------------------------+
 
-    def get_templates(self) -> typing.Iterable[Path]:
+    def get_templates(self) -> Iterable[Path]:
         """
         Enumerate all templates found in the templates path.
         :data:`~TEMPLATE_SUFFIX` as the suffix for the filename.
@@ -259,7 +259,7 @@ class CodeGenerator(AbstractGenerator):
         self,
         is_dryrun: bool = False,
         allow_overwrite: bool = True,
-    ) -> typing.Iterable[Path]:
+    ) -> Iterable[Path]:
         raise NotImplementedError()
 
     # +-----------------------------------------------------------------------+
@@ -268,8 +268,8 @@ class CodeGenerator(AbstractGenerator):
 
     @staticmethod
     def _filter_and_write_line(
-        line_and_lineend: typing.Tuple[str, str],
-        output_file: typing.TextIO,
+        line_and_lineend: Tuple[str, str],
+        output_file: TextIO,
         line_pps: list["LinePostProcessor"],
     ) -> None:
         for line_pp in line_pps:
@@ -286,8 +286,8 @@ class CodeGenerator(AbstractGenerator):
     @classmethod
     def _generate_with_line_buffer(
         cls,
-        output_file: typing.TextIO,
-        template_gen: typing.Generator[str, None, None],
+        output_file: TextIO,
+        template_gen: Generator[str, None, None],
         line_pps: list["LinePostProcessor"],
     ) -> None:
         newline_pattern = re.compile(r"\n|\r\n", flags=re.MULTILINE)
@@ -317,7 +317,7 @@ class CodeGenerator(AbstractGenerator):
     def _generate_code(
         self,
         output_path: Path,
-        template_gen: typing.Generator[str, None, None],
+        template_gen: Generator[str, None, None],
         allow_overwrite: bool,
     ) -> None:
         """
@@ -373,7 +373,7 @@ class DSDLCodeGenerator(CodeGenerator):
     # +-----------------------------------------------------------------------+
 
     @staticmethod
-    def filter_yamlfy(value: typing.Any) -> str:
+    def filter_yamlfy(value: Any) -> str:
         """
         Filter to, optionally, emit a dump of the dsdl input as a yaml document.
         Available as ``yamlfy`` in all template environments.
@@ -404,7 +404,7 @@ class DSDLCodeGenerator(CodeGenerator):
         """
         return str(yaml_dump(value, Dumper=YamlDumper))
 
-    def filter_type_to_template(self, value: typing.Any) -> str:
+    def filter_type_to_template(self, value: Any) -> str:
         """
         Template for type resolution as a filter. Available as ``type_to_template``
         in all template environments.
@@ -425,7 +425,21 @@ class DSDLCodeGenerator(CodeGenerator):
             raise RuntimeError(f"No template found for type {value}")
         return result.name
 
-    def filter_type_to_include_path(self, value: typing.Any, resolve: bool = False) -> str:
+    def filter_allfile_to_template(self, allfile: Union[str, Path]) -> str:
+        """
+        Template for allfile resolution as a filter. Available as ``allfile_to_template``
+        in all template environments.
+
+        :param allfile: The name and/or relative path for the allfile's output.
+
+        :return: A path to a template for rendering the allfile :data:`TEMPLATE_SUFFIX`
+        """
+        result = self.dsdl_loader.allfile_to_template(allfile if isinstance(allfile, Path) else Path(allfile))
+        if result is None:
+            raise RuntimeError(f"No template found for allfile {allfile}")
+        return result.name
+
+    def filter_type_to_include_path(self, value: Any, resolve: bool = False) -> str:
         """
         Emits an include path to the output target for a given type.
 
@@ -437,7 +451,7 @@ class DSDLCodeGenerator(CodeGenerator):
 
             # include "foo/bar/my_type.h"
 
-        :param typing.Any value: The type to emit an include for.
+        :param Any value: The type to emit an include for.
         :param bool resolve: If True the path returned will be absolute else the path will
                              be relative to the folder of the root namespace.
         :return: A string path to output file for the type.
@@ -450,7 +464,7 @@ class DSDLCodeGenerator(CodeGenerator):
             return include_path.relative_to(self.namespace.output_folder.parent).as_posix()
 
     @staticmethod
-    def filter_typename(value: typing.Any) -> str:
+    def filter_typename(value: Any) -> str:
         """
         Filters a given token as its type name. Available as ``typename``
         in all template environments.
@@ -523,7 +537,7 @@ class DSDLCodeGenerator(CodeGenerator):
             raise TypeError(f"Expected BitLengthSet, got {type(offset).__name__}")
 
     @staticmethod
-    def filter_bit_length_set(values: typing.Optional[typing.Union[typing.Iterable[int], int]]) -> pydsdl.BitLengthSet:
+    def filter_bit_length_set(values: Optional[Union[Iterable[int], int]]) -> pydsdl.BitLengthSet:
         """
         Convert an integer or a list of integers into a :class:`pydsdl.BitLengthSet`.
 
@@ -593,9 +607,7 @@ class DSDLCodeGenerator(CodeGenerator):
         return (int(n_bits) + 7) // 8
 
     @staticmethod
-    def filter_text_table(
-        data: typing.Dict, start_each_line: str, column_sep: str = " : ", line_end: str = "\n"
-    ) -> str:
+    def filter_text_table(data: Dict, start_each_line: str, column_sep: str = " : ", line_end: str = "\n") -> str:
         """
         Create a text table from a dictionary of data.
 
@@ -641,7 +653,7 @@ class DSDLCodeGenerator(CodeGenerator):
     # +-----------------------------------------------------------------------+
 
     @staticmethod
-    def is_None(value: typing.Any) -> bool:  # pylint: disable=invalid-name
+    def is_None(value: Any) -> bool:  # pylint: disable=invalid-name
         """
         Tests if a value is ``None``
 
@@ -770,14 +782,8 @@ class DSDLCodeGenerator(CodeGenerator):
 
     # +-----------------------------------------------------------------------+
 
-    def __init__(
-        self, namespace: nunavut.Namespace, resource_types: int = ResourceType.ANY.value, **kwargs: typing.Any
-    ):
-        # set the search policy so we ignore the internal templates iff a filesystem
-        # path is provided to the generator.
-        super().__init__(
-            namespace, resource_types=resource_types, search_policy=ResourceSearchPolicy.FIND_FIRST, **kwargs
-        )
+    def __init__(self, namespace: nunavut.Namespace, resource_types: int = ResourceType.ANY.value, **kwargs: Any):
+        super().__init__(namespace, resource_types=resource_types, **kwargs)
         for test_name, test in self._create_all_dsdl_tests().items():
             self._env.add_test(test_name, test)
         self._env.add_conventional_methods_to_environment(self)
@@ -790,19 +796,25 @@ class DSDLCodeGenerator(CodeGenerator):
         self,
         is_dryrun: bool = False,
         allow_overwrite: bool = True,
-    ) -> typing.Iterable[Path]:
+    ) -> Iterable[Path]:
         generated = []  # type: list[Path]
         provider = self.namespace.get_all_types if self.generate_namespace_types else self.namespace.get_all_datatypes
         for parsed_type, output_path in provider():
             logger.info("Generating: %s", parsed_type)
             generated.append(self._generate_type(parsed_type, output_path, is_dryrun, allow_overwrite))
+
+        generated.extend(
+            self._generate_allfiles(
+                provider, self.namespace.get_root_namespace().output_folder.parent, is_dryrun, allow_overwrite
+            )
+        )
         return generated
 
     # +-----------------------------------------------------------------------+
     # | PRIVATE
     # +-----------------------------------------------------------------------+
     @classmethod
-    def _create_instance_tests_for_type(cls, root: pydsdl.Any) -> typing.Dict[str, typing.Callable]:
+    def _create_instance_tests_for_type(cls, root: pydsdl.Any) -> Dict[str, Callable]:
         tests = dict()
 
         def _field_is_instance(field_or_datatype: pydsdl.Any) -> bool:
@@ -825,7 +837,7 @@ class DSDLCodeGenerator(CodeGenerator):
         return tests
 
     @classmethod
-    def _create_all_dsdl_tests(cls) -> typing.Mapping[str, typing.Callable]:
+    def _create_all_dsdl_tests(cls) -> Mapping[str, Callable]:
         """
         Create a collection of jinja tests for all base dsdl types.
 
@@ -874,6 +886,32 @@ class DSDLCodeGenerator(CodeGenerator):
             self._generate_code(output_path, template_gen, allow_overwrite)
         return output_path
 
+    def _generate_allfiles(
+        self,
+        provider: Generator[Tuple[Any, Path], None, None],
+        output_path: Path,
+        is_dryrun: bool,
+        allow_overwrite: bool,
+    ) -> list[Path]:
+        """
+        Renders allfile files which are each given access to the provider as `AllT`.
+        """
+        output_paths = []
+        target_extension = self.language_context.get_target_language().get_config_value(
+            nunavut.lang.Language.WKCV_DEFINITION_FILE_EXTENSION
+        )
+        for allfile in self.allfiles:
+            template_name = self.filter_allfile_to_template(allfile)
+            template = self._env.get_template(template_name)
+            template_gen = template.generate(AllT=provider)
+            allfile_output = output_path / allfile
+            if len(allfile.suffix) == 0:
+                allfile_output = allfile_output.with_suffix(target_extension)
+            output_paths.append(allfile_output)
+            if not is_dryrun:
+                self._generate_code(allfile_output, template_gen, allow_overwrite)
+        return output_paths
+
 
 # +---------------------------------------------------------------------------+
 # | JINJA : SupportGenerator
@@ -894,8 +932,8 @@ class SupportGenerator(CodeGenerator):
         namespace: nunavut.Namespace,
         resource_types: int,
         generate_namespace_types: YesNoDefault = YesNoDefault.DEFAULT,
-        templates_dir: typing.Optional[typing.Union[Path, list[Path]]] = None,
-        **kwargs: typing.Any,
+        templates_dir: Optional[Union[Path, list[Path]]] = None,
+        **kwargs: Any,
     ):
         super().__init__(
             namespace,
@@ -922,7 +960,7 @@ class SupportGenerator(CodeGenerator):
         self,
         is_dryrun: bool = False,
         allow_overwrite: bool = True,
-    ) -> typing.Iterable[Path]:
+    ) -> Iterable[Path]:
         target_language = self.language_context.get_target_language()
         target_path = Path(self.namespace.get_support_output_folder()) / self._sub_folders
 

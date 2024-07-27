@@ -12,6 +12,7 @@ import pytest
 from pydsdl import Any, CompositeType, read_namespace
 
 from nunavut import Namespace, NamespaceFactory
+from nunavut._namespace import build_namespace_tree
 from nunavut._utilities import YesNoDefault
 from nunavut.jinja import DSDLCodeGenerator
 from nunavut.lang import Language, LanguageContext, LanguageContextBuilder

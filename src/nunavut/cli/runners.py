@@ -188,6 +188,7 @@ class LegacyArgparseRunner(Runner):
             "lstrip_blocks": self._args.lstrip_blocks,
             "post_processors": self._args.post_processors,
             "embed_auditing_info": self._args.embed_auditing_info,
+            "search_policy": self._args.search_policy,
         }
 
         from nunavut.jinja import DSDLCodeGenerator, SupportGenerator  # pylint: disable=import-outside-toplevel

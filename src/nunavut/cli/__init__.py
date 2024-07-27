@@ -258,6 +258,56 @@ def _make_parser(parser_type: Type[ParserT]) -> ParserT:
     )
 
     extended_group.add_argument(
+        "--fallback-to-builtin-templates",
+        "-tfb",
+        action="store_true",
+        help=textwrap.dedent(
+            """
+
+        Normally, if providing a custom templates directory, the built-in templates are not
+        searched for. This option will cause the built-in templates to be searched for if a
+        template is not found in the custom templates directory first.
+
+    """
+        ).lstrip(),
+    )
+
+    extended_group.add_argument(
+        "--all-file",
+        "-A",
+        type=Path,
+        action="append",
+        help=textwrap.dedent(
+            """
+
+        All-files are generated from special templates that are given access to all types in
+        all namespaces. This is useful for generating files that are not specific to a single
+        type like dependency files, manifests, or aggregate headers.
+
+        The template lookup paths are the same as for DSDL types but the template is selected
+        based on the filename of the all-file first and falls back to All.js if no specific
+        template is found. Note that the DSDL type hierarchy will be searched first so you
+        cannot name your all-file the same as a DSDL data type like `StructureType.j2`.
+
+        Example ::
+
+            # looks for all_types.j2 in the c_jinja template directory and generates
+            # generated/include/all_types.h from all types in all DSDL namespaces.
+            nnvg --all-file all_types.h --outdir generated/include --templates c_jinja \
+                path/to/types/animal:cat.1.0.dsdl \
+                path/to/types/animal:dog.1.0.dsdl
+
+            # looks for manifest.j2 in the yaml_jinja template directory and generates
+            # generated/include/manifest.yaml from all types in all DSDL namespaces.
+            nnvg --all-file include/manifest.yaml --outdir generated --templates yaml_jinja \
+                path/to/types/animal:cat.1.0.dsdl \
+                path/to/types/animal:dog.1.0.dsdl
+
+    """
+        ).lstrip(),
+    )
+
+    extended_group.add_argument(
         "--include-experimental-languages",
         "--experimental-languages",
         "-Xlang",

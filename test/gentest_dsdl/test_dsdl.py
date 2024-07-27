@@ -7,7 +7,8 @@ import typing
 from pathlib import Path
 
 import pytest
-from nunavut import generate_types, generate_all, ResourceType
+
+from nunavut import ResourceType, generate_all, generate_types
 
 
 @pytest.mark.parametrize(
@@ -49,19 +50,17 @@ def test_realgen(
         resource_types=resource_types,
         language_options=language_options,
         include_experimental_languages=True,
-        depfile=True
+        depfile=True,
+        templates_dir=gen_paths.templates_dir
     )
 
     # We only expect one root namespace directory in the public regulated data types.
     root_namespace_directories = {x.target_file.path_to_namespace for x in result.generator_targets.values()}
     assert len(root_namespace_directories) == 1
     assert root_namespace_directories.pop().stem == "uavcan"
-    assert (gen_paths.out_dir / Path("nunavut.make")).exists()
 
 
-def test_realgen_heartbeat(
-    gen_paths: typing.Any
-) -> None:
+def test_realgen_heartbeat(gen_paths: typing.Any) -> None:
     """
     Sanity test that generates the heartbeat message from the public types, ensuring its dependent types are also
     generated.
@@ -72,12 +71,7 @@ def test_realgen_heartbeat(
 
     assert heartbeat.exists()
 
-    generate_all(
-        "c",
-        [heartbeat],
-        root_namespace_dir,
-        gen_paths.out_dir
-    )
+    generate_all("c", [heartbeat], root_namespace_dir, gen_paths.out_dir)
 
     assert (gen_paths.out_dir / Path("uavcan", "node", "Heartbeat_1_0.h")).exists()
     assert (gen_paths.out_dir / Path("nunavut", "support", "serialization.h")).exists()
