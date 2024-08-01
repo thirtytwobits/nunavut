@@ -5,6 +5,9 @@
     "pylint.args": [
         "--rcfile=${workspaceFolder}/tox.ini"
     ],
+    "isort.args": [
+        "--line-length=120"
+    ],
     "python.analysis.supportRestructuredText": true,
     "black-formatter.args": [
         "--line-length=120"

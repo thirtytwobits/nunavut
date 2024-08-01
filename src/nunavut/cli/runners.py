@@ -19,7 +19,7 @@ from pydsdl import read_namespace as read_dsdl_namespace
 
 from nunavut._generators import AbstractGenerator as Generator
 from nunavut._generators import generate_all
-from nunavut._namespace import NamespaceFactory
+from nunavut._namespace import NamespaceContext
 from nunavut._utilities import ResourceType
 from nunavut.lang import Language, LanguageContext, LanguageContextBuilder
 
@@ -168,15 +168,15 @@ class LegacyArgparseRunner(Runner):
         should_create_codegen = (self._args.resource_types & ResourceType.ONLY.value) == 0
         should_create_supportgen = (self._args.resource_types & ResourceType.ANY.value) != 0
         if should_create_codegen and not self._args.list_configuration:
-            type_map = read_dsdl_namespace(
+            type_map = zip(read_dsdl_namespace(
                 root_namespace_path,
                 self._args.root_namespace_directories_or_names,
                 allow_unregulated_fixed_port_id=self._args.allow_unregulated_fixed_port_id,
-            )
+            ), itertools.repeat([]))
         else:
             type_map = []
 
-        root_namespace = NamespaceFactory(lctx, self._args.outdir, root_namespace_path).add_types(type_map)
+        root_namespace = NamespaceContext(lctx, self._args.outdir, root_namespace_path).add_types(type_map)
 
         #
         # nunavut : create generators

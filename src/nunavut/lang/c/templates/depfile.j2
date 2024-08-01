@@ -3,6 +3,6 @@
 {
   "full_name": "{{ T.full_name }}",
   "source": "{{ T.source_file_path }}",
-  "file": "{{ out_file }}",
+  "file": "{{ T | to_include_path }}",
 }
 {% endfor %}

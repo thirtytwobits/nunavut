@@ -13,13 +13,13 @@ import abc
 import itertools
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Type, Union, cast
+from typing import Any, Iterable, Mapping, Optional, Tuple, Type, Union, cast
 
 from pydsdl import CompositeType
 from pydsdl import read_files as read_dsdl_files
 from pydsdl import read_namespace as read_dsdl_namespace
 
-from nunavut._namespace import Namespace, NamespaceFactory, build_namespace_tree
+from nunavut._namespace import Namespace, build_namespace_tree
 from nunavut._utilities import ResourceType, YesNoDefault
 from nunavut.lang import LanguageContext, LanguageContextBuilder
 from nunavut.lang._language import Language
@@ -84,10 +84,16 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
 
     :param nunavut.Namespace namespace:  The top-level namespace to
         generates types at and from.
+    :param int resource_types: A bitmask of resources to generate.
+        This can be a combination of ResourceType values.
     :param YesNoDefault generate_namespace_types:  Set to YES
         to force generation files for namespaces and NO to suppress.
         DEFAULT will generate namespace files based on the language
         preference.
+    :param Iterable[Path] index_file: A list of paths to files that
+        should be generated, relative to the output directory, which
+        are given access to the full namespace context rather than
+        per-type context.
     :param Any kwargs: Additional arguments to pass into generators.
     """
 
@@ -96,7 +102,7 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         namespace: Namespace,
         resource_types: int,
         generate_namespace_types: YesNoDefault = YesNoDefault.DEFAULT,
-        allfile: Optional[Iterable[Path]] = None,
+        index_file: Optional[Iterable[Path]] = None,
         **kwargs: Any,
     ):  # pylint: disable=unused-argument
         self._namespace = namespace
@@ -111,7 +117,10 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
                 self._generate_namespace_types = True
             else:
                 self._generate_namespace_types = False
-        self._allfiles = [Path(p) for p in allfile] or []
+        if index_file is not None:
+            self._index_files = [Path(p) for p in index_file]
+        else:
+            self._index_files = []
 
     @property
     def namespace(self) -> Namespace:
@@ -137,12 +146,12 @@ class AbstractGenerator(metaclass=abc.ABCMeta):
         return self._generate_namespace_types
 
     @property
-    def allfiles(self) -> list[Path]:
+    def index_files(self) -> list[Path]:
         """
         A list of paths to files that should be generated, relative to the output directory, which are given access
         to the full namespace context rather than per-type context.
         """
-        return self._allfiles
+        return self._index_files
 
     @abc.abstractmethod
     def get_templates(self) -> Iterable[Path]:
@@ -200,7 +209,7 @@ class MultiGeneratorBuilder:
         self._output_dir = output_dir
         self._resource_types: int = ResourceType.ANY.value
         self._dsdl_types: set[CompositeType] = set()
-        self._nsf: NamespaceFactory = NamespaceFactory(language_context, output_dir, root_namespace_dir)
+        self._nsf: NamespaceContext = NamespaceContext(language_context, output_dir, root_namespace_dir)
 
     def __len__(self) -> int:
         return len(self._generators)
@@ -219,16 +228,16 @@ class MultiGeneratorBuilder:
         self._resource_types = resource_types
         return self
 
-    def update_dsdl_types(self, dsdl_types: list[CompositeType]) -> "MultiGeneratorBuilder":
+    def update_dsdl_types(self, dsdl_types: list[Tuple[CompositeType, list[CompositeType]]]) -> "MultiGeneratorBuilder":
         """
         Set the DSDL types for the generators.
         """
         self._nsf.add_types(dsdl_types)
         return self
 
-    def get_root_namespace(self) -> Optional[Namespace]:
+    def get_root_namespace(self) -> Namespace:
         """
-        Get the root namespace determined so far. This will be none if no
+        Get the root namespace determined so far.
         """
         return self._nsf.get_root_namespace()
 
@@ -544,7 +553,7 @@ def generate_all(
         )
 
         assert len(target_dsdl_types) == 1
-
+        types_w_dependencies = zip(target_dsdl_types, itertools.repeat(dependent_dsdl_types_for_target))
         target_dsdl_type = target_dsdl_types[0]
 
         if not kwargs.get("omit_dependencies", False):
@@ -554,10 +563,10 @@ def generate_all(
         try:
             multigen_builder = multi_generator_builder_index[
                 target_dsdl_type.source_file_path_to_root
-            ].update_dsdl_types(target_dsdl_types)
+            ].update_dsdl_types(types_w_dependencies)
         except KeyError:
             multigen_builder = _create_multigen_builder(target_dsdl_type.source_file_path_to_root).update_dsdl_types(
-                target_dsdl_types
+                types_w_dependencies
             )
             multi_generator_builder_index[target_dsdl_type.source_file_path_to_root] = multigen_builder
 

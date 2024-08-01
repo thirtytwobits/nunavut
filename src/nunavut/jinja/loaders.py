@@ -239,11 +239,11 @@ class DSDLTemplateLoader(BaseLoader):
         """
         return self._to_template(self._type_to_template_internal, value_type)
 
-    def allfile_to_template(self, allfile: Path) -> Optional[Path]:
+    def index_file_to_template(self, index_file: Path) -> Optional[Path]:
         """
-        Given an allfile output path, return a template used to render the allfile.
+        Given an index file output path, return a template used to render the index.
 
-        :return: a template or None if no template could be found for the given allfile.
+        :return: a template or None if no template could be found for the given index file.
 
         .. invisible-code-block: python
             from nunavut.jinja.loaders import DSDLTemplateLoader
@@ -256,13 +256,13 @@ class DSDLTemplateLoader(BaseLoader):
             mock_get_target_language.return_value.get_templates_package_name.return_value = 'nunavut.lang.c'
 
             l = DSDLTemplateLoader(namespace=mock_namespace)
-            template_name = l.allfile_to_template(Path("depfile.dep"))
+            template_name = l.index_file_to_template(Path("depfile.dep"))
 
             assert template_name is not None
             assert template_name.name == 'depfile.j2'
 
         """
-        return self._to_template(self._allfile_to_template_internal, allfile)
+        return self._to_template(self._index_file_to_template_internal, index_file)
 
     # +----------------------------------------------------------------------------------------------------------------+
     # | PRIVATE
@@ -283,13 +283,13 @@ class DSDLTemplateLoader(BaseLoader):
             template_path = converter(value, dict(map(lambda x: (x.stem, x), filtered_templates)))
         return template_path
 
-    def _allfile_to_template_internal(self, allfile: Path, templates: Mapping[str, Path]) -> Optional[Path]:
+    def _index_file_to_template_internal(self, index_file: Path, templates: Mapping[str, Path]) -> Optional[Path]:
         try:
-            return templates[allfile.stem]
+            return templates[index_file.stem]
         except KeyError:
             pass
         try:
-            return templates["All"]
+            return templates["index"]
         except KeyError:
             return None
 

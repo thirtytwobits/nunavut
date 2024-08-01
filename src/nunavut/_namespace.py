@@ -9,18 +9,129 @@ that are also data objects for target languages, like python, that model namespa
 """
 
 import collections
-from pathlib import Path, PurePath
-from typing import Deque, Generator, ItemsView, Iterable, Iterator, KeysView, Optional, Tuple, Union
+from pathlib import Path, Path
+from typing import Any, Deque, Generator, ItemsView, Iterable, Iterator, KeysView, Optional, Tuple, Union, ValuesView
 
 import pydsdl
 
 from .lang import Language, LanguageContext
 from .lang._common import IncludeGenerator
 
-# +---------------------------------------------------------------------------+
+
+# +--------------------------------------------------------------------------------------------------------------------+
+class Generatable(Path):
+    """
+    A file that can be generated from a pydsdl type.
+
+    .. invisible-code-block: python
+
+        from nunavut._namespace import Generatable
+        from pathlib import Path
+        from copy import copy
+        import pydsdl
+        from unittest.mock import MagicMock
+        from pytest import raises
+
+        path = Path("test")
+        definition = MagicMock(spec=pydsdl.Any)
+        input_types = [MagicMock(spec=pydsdl.Any)]
+
+        gen = Generatable.wrap(path, definition, input_types)
+
+        assert Path("path", "to", "test") == Path("path", "to") / gen
+        copy_of_gen = copy(gen)
+        assert gen == copy_of_gen
+        # Ensure the copy is shallow
+        gen._input_types[0].__hash__ = MagicMock(return_value=1)
+        hash(gen) == hash(copy_of_gen)
+
+        gen._input_types.clear()
+        assert gen != copy_of_gen
+        gen = copy(copy_of_gen)
+        assert gen == copy_of_gen
+        gen._definition = MagicMock(spec=pydsdl.Any)
+        assert gen != copy_of_gen
+
+        assert Generatable("foo", definition=MagicMock(spec=pydsdl.Any)) != copy_of_gen
+
+        with raises(ValueError):
+            Generatable("foo")
+
+        print(f"{str(gen)}:{repr(gen)}")
+
+        assert str(Path("foo")) == str(Generatable("foo", definition=MagicMock(spec=pydsdl.Any)))
+        assert Path("foo") == Generatable("foo/bar", definition=MagicMock(spec=pydsdl.Any)).parent
+
+    """
+
+    @classmethod
+    def wrap(cls, path: Path, definition: pydsdl.Any, input_types: list[pydsdl.Any]) -> "Generatable":
+        """
+        Wrap a Path object with the Generatable interface.
+
+        :param Path path: The path to the generated file.
+        :param pydsdl.Any definition: The pydsdl type that can be reified into a generated file.
+        :param list[pydsdl.Any] input_types: The types that are required to generate the file.
+        :return: A Generatable object.
+        """
+        return Generatable(path, definition=definition, input_types=input_types)
+
+    def __init__(self, *args, **kwargs):
+        try:
+            self._definition = kwargs.pop("definition")
+        except KeyError as ex:
+            raise ValueError("Generatable requires a 'definition' argument.") from ex
+
+        try:
+            self._input_types = kwargs.pop("input_types")
+        except KeyError:
+            self._input_types = []
+
+        super().__init__(*args, **kwargs)
+
+    def with_segments(self, *pathsegments):
+        """
+        Path override: Construct a new path object from any number of path-like objects.
+        We descard the Generatable type here and continue on with a default Path object.
+        """
+        return Path(*pathsegments)
+
+    @property
+    def definition(self) -> pydsdl.Any:
+        """
+        The pydsdl type that can be reified into a generated file.
+        """
+        return self._definition
+
+    @property
+    def input_types(self) -> list[pydsdl.Any]:
+        """
+        The types that are required to generate the file.
+        """
+        return self._input_types.copy()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Generatable):
+            return (
+                super().__eq__(other) and self.definition == other.definition and self.input_types == other.input_types
+            )
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((super().__hash__(), self.definition))
+
+    def __repr__(self) -> str:
+        return (
+            f"{super().__repr__()}, " f"definition={repr(self._definition)}, " f"input_types={repr(self._input_types)}"
+        )
+
+    def __copy__(self) -> "Generatable":
+        return Generatable(self, definition=self.definition, input_types=self.input_types)
 
 
-class Namespace(pydsdl.Any):
+# +--------------------------------------------------------------------------------------------------------------------+
+class Namespace(pydsdl.Any):  # pylint: disable=too-many-public-methods
     """
     K-ary tree (where K is the largest set of data types in a single dsdl namespace) where
     the nodes represent dsdl namespaces and the children are the datatypes and other nested
@@ -31,10 +142,143 @@ class Namespace(pydsdl.Any):
                                 a unique identifier.
     :param Path root_namespace_dir: The directory representing the dsdl namespace and containing the
                                 namespaces's datatypes and nested namespaces.
-    :param PurePath base_output_path: The base path under which all namespaces and datatypes should
+    :param Path base_output_path: The base path under which all namespaces and datatypes should
                                 be generated.
     :param LanguageContext language_context: The generated software language context the namespace is within.
     """
+
+    @classmethod
+    def strop_namespace(cls, full_namespace: str, language_context: LanguageContext) -> Tuple[list[str], list[str]]:
+        """
+        Strop a namespace string for a given language context.
+
+        :param str full_namespace: The dot-separated namespace string to strop.
+        :param LanguageContext language_context: The language context to use when stroping the namespace.
+        :return: A tuple containing the original namespace components and the stropped namespace components.
+
+        .. invisible-code-block: python
+
+            from nunavut.lang import LanguageContext, LanguageContextBuilder
+            from nunavut._namespace import Namespace
+
+            lctx = (
+                LanguageContextBuilder()
+                    .set_target_language("c")
+                    .create()
+            )
+
+        .. code-block:: python
+
+            full_namespace = "uavcan.node"
+            namespace_components, namespace_components_stropped = Namespace.strop_namespace(full_namespace, lctx)
+
+            assert namespace_components == ["uavcan", "node"]
+            assert namespace_components_stropped == ["uavcan", "node"]
+
+        """
+        namespace_components = full_namespace.split(".")
+        return (
+            namespace_components,
+            [language_context.filter_id_for_target(component, "path") for component in namespace_components],
+        )
+
+    @classmethod
+    def add_types(
+        cls,
+        index: "Namespace",
+        types: list[Tuple[pydsdl.CompositeType, list[pydsdl.CompositeType]]],
+        extension: Optional[str] = None,
+    ) -> "Namespace":
+        """
+        Add a set of types to a namespace tree building new nodes as needed.
+
+        :param Namespace tree: A namespace tree to add types to. This can be any namespace in the tree as
+            :meth:`Namespace.get_index_namespace` will be used to find the meta-namespace.
+        :param list types: A list of pydsdl types to add.
+        :param str extension: Override the file extension to use for the generated files. If None, the extension will be
+            determined by the target language.
+
+        .. invisible-code-block: python
+
+            from nunavut._namespace import Namespace
+            from nunavut.lang import LanguageContext, LanguageContextBuilder
+            from pathlib import Path
+            from unittest.mock import MagicMock
+            from pytest import raises
+            import pydsdl
+
+            lctx = (
+                LanguageContextBuilder()
+                    .set_target_language("c")
+                    .create()
+            )
+            base_path = gen_paths.out_dir
+            root_namespace_dir = base_path / Path("animalia")
+            root_namespace_dir.mkdir(exist_ok=True)
+
+            chordata_folder = root_namespace_dir / Path("chordata")
+            chordata_folder.mkdir(exist_ok=True)
+
+            structures_folder = root_namespace_dir / Path("structures")
+            structures_folder.mkdir(exist_ok=True)
+
+            mock_aves = MagicMock(spec=pydsdl.CompositeType)
+            mock_aves.full_namespace = "animalia.chordata"
+            mock_aves.source_file_path_to_root = root_namespace_dir
+            mock_aves.source_file_path = chordata_folder / Path("Aves.1.0.dsdl")
+
+            mock_mammal = MagicMock(spec=pydsdl.CompositeType)
+            mock_mammal.full_namespace = "animalia.chordata"
+            mock_mammal.source_file_path_to_root = root_namespace_dir
+            mock_mammal.source_file_path = chordata_folder / Path("Mammal.1.0.dsdl")
+
+            mock_wing = MagicMock(spec=pydsdl.CompositeType)
+            mock_wing.full_namespace = "animalia.structures"
+            mock_wing.source_file_path_to_root = root_namespace_dir
+            mock_wing.source_file_path = structures_folder / Path("Wing.1.0.dsdl")
+
+        .. code-block:: python
+
+            index = Namespace.Identity(base_path, lctx)
+
+            # Add the types to the root namespace.
+            Namespace.add_types(
+                index,
+                [
+                    (mock_aves, []),
+                    (mock_mammal, []),
+                    (mock_wing, [])
+                ]
+            )
+
+            assert index.get_root_namespace(root_namespace_dir) == index.get_root_namespace(root_namespace_dir)
+            assert index.get_root_namespace(root_namespace_dir) != index.get_root_namespace(chordata_folder)
+
+        """
+        for dsdl_type, input_types in types:
+            # For each type we form a path with the output_dir as the base; the intermediate
+            # folders named for the type's namespaces; and a file name that includes the type's
+            # short name, major version, minor version, and the extension argument as a suffix.
+            # Python's pathlib adapts the provided folder and file names to the platform
+            # this script is running on.
+            # We also, lazily, generate Namespace nodes as we encounter new namespaces for the
+            # first time.
+
+            root_namespace = index.get_root_namespace(dsdl_type.source_file_path_to_root)
+            root_namespace._add_data_type(dsdl_type, input_types, extension)  # pylint: disable=protected-access
+
+    @classmethod
+    def Identity(cls, output_path: Path, lctx: LanguageContext) -> "Namespace":
+        """
+        Create a namespace identity object. This is a namespace with no root directory and no parent. It can be used
+        as a Namespace index object.
+
+        :param Path output_path: The base path under which all namespaces and datatypes should be generated.
+        :param LanguageContext lctx: The language context to use when building the namespace.
+        :return: A namespace identity object.
+        :rtype: Namespace
+        """
+        return cls("", Path(""), output_path, lctx)
 
     DefaultOutputStem = "_"
 
@@ -42,33 +286,44 @@ class Namespace(pydsdl.Any):
         self,
         full_namespace: str,
         root_namespace_dir: Path,
-        base_output_path: PurePath,
+        base_output_path: Path,
         language_context: LanguageContext,
+        parent: Optional["Namespace"] = None,
     ):
+        if full_namespace == "":
+            if parent is not None:
+                raise ValueError("Identity namespaces must not have a parent.")
+        else:
+            if parent is None:
+                raise ValueError("Non-identity namespaces must have a parent.")
+            if len(root_namespace_dir.name) == 0:
+                raise ValueError("Root namespace directory must have a name.")
+
         target_language = language_context.get_target_language()
-        self._parent: Optional[Namespace] = None
-        self._namespace_components: list[str] = []
-        self._namespace_components_stropped: list[str] = []
-        for component in full_namespace.split("."):
-            self._namespace_components_stropped.append(language_context.filter_id_for_target(component, "path"))
-            self._namespace_components.append(component)
+        self._parent = parent
+        self._namespace_components, self._namespace_components_stropped = self.strop_namespace(
+            full_namespace, language_context
+        )
+        if self._namespace_components[0] != root_namespace_dir.name:
+            raise ValueError(f"Namespace {full_namespace} does not match root namespace directory {root_namespace_dir}")
         self._full_namespace = ".".join(self._namespace_components_stropped)
-        self._output_folder = Path(base_output_path / PurePath(*self._namespace_components_stropped))
+        self._output_folder = Path(base_output_path / Path(*self._namespace_components_stropped))
         output_stem = target_language.get_config_value(Language.WKCV_NAMESPACE_FILE_STEM, self.DefaultOutputStem)
-        output_path = self._output_folder / PurePath(output_stem)
+        output_path = self._output_folder / Path(output_stem)
         self._base_output_path = base_output_path
         self._output_path = output_path.with_suffix(
             target_language.get_config_value(Language.WKCV_DEFINITION_FILE_EXTENSION)
         )
-        self._source_folder = Path(root_namespace_dir / PurePath(*self._namespace_components[1:])).resolve()
-        if not self._source_folder.exists():
-            # to make Python > 3.5 behave the same as Python 3.5
-            raise FileNotFoundError(self._source_folder)
+        self._source_folder = Path(root_namespace_dir / Path(*self._namespace_components[1:])).resolve(strict=False)
         self._short_name = self._namespace_components_stropped[-1]
-        self._data_type_to_outputs: dict[pydsdl.CompositeType, Path] = dict()
-        self._nested_namespaces: set[Namespace] = set()
+        self._data_type_to_outputs: dict[pydsdl.CompositeType, Generatable] = {}
+        self._nested_namespaces: dict[str, Namespace] = {}
         self._language_context = language_context
 
+        if self._parent is not None:
+            self._parent._nested_namespaces[self._namespace_components[0]] = self
+
+    # +--[PROPERTIES]-----------------------------------------------------------------------------------------------+
     @property
     def output_folder(self) -> Path:
         """
@@ -90,11 +345,86 @@ class Namespace(pydsdl.Any):
         """
         return self._parent
 
-    def get_support_output_folder(self) -> PurePath:
+    @property
+    def base_output_path(self) -> Path:
         """
-        The folder under which support artifacts are generated.
+        The folder under which artifacts are generated.
         """
         return self._base_output_path
+
+    # +--[PUBLIC]--------------------------------------------------------------------------------------------------+
+    def get_index_namespace(self) -> "Namespace":
+        """
+        The index namespace is a meta-namespace that is empty and has no data types. It contains
+        the root output folder, a common language context, and all the namespaces in a tree of DSDL types. It is used to
+        generate index files that reference all the generated files in the tree at once. Logically, it is the root of
+        the tree and is always the parent of each root namespace. The taxonomy of namespaces is therefore ::
+
+                                          ┌────────────────┐
+                                          │  CompoundType  │
+                                          │                │
+                                          └────────────────┘
+                                           ▲             ▲
+                        ┌──────────────────┘             │
+                        │                                │
+                        │              ┌──────┐          │
+                        │              │ Path │          │
+                        │              │      │          │
+                        │              └──────┘          │
+                        │               ▲    ▲           │
+                        │               │    │           │
+                  ┌─────┴─────┐ ┌───────┴┐  ┌┴───────┐   │
+                  │ Namespace │ │ Folder │  │  File  │   │
+                  │           │ │        │  │        │   │
+                  └───────────┘ └────────┘  └────────┘   │
+                   ▲    ▲   ▲     ▲    ▲           ▲     │
+                   │    │   │     │    └──────┐    │     │
+                   │    │   │     │           │    │     │
+                   │    │   └──── │ ─────┐    │    │     │
+                   │    │         │      │    │    │     │
+                   │    └─────┐   │      │    │    │     │
+                   │          │   │      │    │    │     │
+                ┌──┴──────┐ ┌─┴───┴──┐ ┌─┴────┴─┐ ┌┴─────┴────┐
+                │  index  │ │  root  │ │ nested │ │ DSDL Type │
+                │         │ │        │ │        │ │           │
+                └─────────┘ └────────┘ └────────┘ └───────────┘
+
+        :return: The index namespace.
+
+        .. invisible-code-block: python
+
+            from nunavut._namespace import Namespace
+            from nunavut.lang import LanguageContext, LanguageContextBuilder
+            from pathlib import Path
+
+            lctx = (
+                LanguageContextBuilder()
+                    .set_target_language("c")
+                    .create()
+            )
+
+            base_path = gen_paths.out_dir
+            root_namespace_dir = base_path / Path("uavcan")
+            root_namespace_dir.mkdir(exist_ok=True)
+            nested_namespace_dir = root_namespace_dir / Path("node")
+            nested_namespace_dir.mkdir(exist_ok=True)
+
+        .. code-block:: python
+
+            # This is the index namespace identity.
+            index_ns = Namespace.Identity(base_path, lctx)
+            ns = Namespace("uavcan", root_namespace_dir, base_path, lctx, index_ns)
+
+            # This is a root namespace identity.
+            assert ns.get_index_namespace() == index_ns
+
+        """
+        namespace = self
+        while namespace.full_namespace != "":
+            if namespace.parent is None:
+                raise RuntimeError(f"Orphaned namespace {self.full_name}: Not in indexed namespace tree.")
+            namespace = namespace.parent
+        return namespace
 
     def get_language_context(self) -> LanguageContext:
         """
@@ -102,15 +432,48 @@ class Namespace(pydsdl.Any):
         """
         return self._language_context
 
-    def get_root_namespace(self) -> "Namespace":
+    def get_root_namespace(self, root_namespace_folder: Path) -> "Namespace":
         """
-        Traverses the namespace tree up to the root and returns the root node.
+        Retrieves or creates a root namespace object from a root namespace folder. Only the folder name is used
+        to determine the namespace name so the same object will be returned for different paths to a folder with
+        the same name.
 
+        .. invisible-code-block: python
+
+            from nunavut._namespace import Namespace
+            from nunavut.lang import LanguageContext, LanguageContextBuilder
+            from pathlib import Path
+
+            lctx = (
+
+                LanguageContextBuilder()
+                    .set_target_language("c")
+                    .create()
+            )
+            base_path = gen_paths.out_dir
+
+        .. code-block:: python
+
+            index_ns = Namespace.Identity(base_path, lctx)
+            uavcan_namespace_dir_0 = Path("path") / Path("to") / Path("uavcan")
+            uavcan_namespace_dir_1 = Path("another") / Path("path") / Path("to") / Path("uavcan")
+
+            assert (
+                index_ns.get_root_namespace(uavcan_namespace_dir_0) ==
+                index_ns.get_root_namespace(uavcan_namespace_dir_1)
+            )
+
+        :param Path root_namespace_folder: The folder that represents the root namespace.
         :return: The root namespace object.
         """
-        namespace = self
-        while namespace.parent is not None:
-            namespace = namespace.parent
+        index = self.get_index_namespace()
+        try:
+            return index._nested_namespaces[root_namespace_folder.name]  # pylint: disable=protected-access
+        except KeyError:
+            pass
+        namespace = Namespace(
+            root_namespace_folder.name, root_namespace_folder, self._base_output_path, self._language_context, index
+        )
         return namespace
 
     def get_nested_namespaces(self) -> Iterator["Namespace"]:
@@ -118,9 +481,9 @@ class Namespace(pydsdl.Any):
         Get an iterator over all the nested namespaces within this namespace.
         This is a shallow iterator that only provides directly nested namespaces.
         """
-        return iter(self._nested_namespaces)
+        return iter(self._nested_namespaces.values())
 
-    def get_nested_types(self) -> ItemsView[pydsdl.CompositeType, Path]:
+    def get_nested_types(self) -> ItemsView[pydsdl.CompositeType, Generatable]:
         """
         Get a view of a tuple relating datatypes in this namespace to the path for the
         type's generated output. This is a shallow view including only the types
@@ -128,7 +491,7 @@ class Namespace(pydsdl.Any):
         """
         return self._data_type_to_outputs.items()
 
-    def get_all_datatypes(self) -> Generator[Tuple[pydsdl.CompositeType, Path], None, None]:
+    def get_all_datatypes(self) -> Generator[Tuple[pydsdl.CompositeType, Generatable], None, None]:
         """
         Generates tuples relating datatypes at and below this namespace to the path
         for each type's generated output.
@@ -142,101 +505,30 @@ class Namespace(pydsdl.Any):
         """
         yield from self._recursive_namespace_generator(self)
 
-    def get_all_types(self) -> Generator[Tuple[pydsdl.Any, Path], None, None]:
+    def get_all_types(self) -> Generator[Tuple[pydsdl.Any, Generatable], None, None]:
         """
         Generates tuples relating datatypes and nested namespaces at and below this
         namespace to the path for each type's generated output.
         """
         yield from self._recursive_data_type_and_namespace_generator(self)
 
-    def find_output_path_for_type(self, any_type: pydsdl.Any) -> Path:
+    def find_output_path_for_type(self, compound_type: Union["Namespace", pydsdl.CompositeType]) -> Generatable:
         """
         Searches the entire namespace tree to find a mapping of the type to an
         output file path.
 
-        :param Any any_type: Either a Namespace or pydsdl.CompositeType to find the
-                             output path for.
+        :param pydsdl.CompositeType compound_type: A Namespace or pydsdl.CompositeType to find the output pathfor.
         :return: The path where a file will be generated for a given type.
         :raises KeyError: If the type was not found in this namespace tree.
         """
-        if isinstance(any_type, Namespace):
-            return any_type.output_path
+        if isinstance(compound_type, Namespace):
+            return compound_type.output_path
         else:
-            try:
-                return self._data_type_to_outputs[any_type]
-            except KeyError:
-                pass
+            # pylint: disable=protected-access
+            root_namespace = self.get_index_namespace().get_root_namespace(compound_type.source_file_path_to_root)
+            return root_namespace._bfs_search_for_output_path(compound_type, set())  # pylint: disable=protected-access
 
-            # We could get fancier but this should do
-            return self.get_root_namespace()._bfs_search_for_output_path(  # pylint: disable=protected-access
-                any_type, set([self])
-            )
-
-    def add_nested_namespace(self, nested: "Namespace") -> bool:
-        """
-        Add a nested namespace to this namespace.
-
-        :param Namespace nested: The namespace to add.
-        :return: True if the namespace was added, False if it was already present.
-
-        .. invisible-code-block: python
-
-            from nunavut._namespace import Namespace
-            from nunavut.lang import LanguageContext, LanguageContextBuilder
-            from pathlib import Path
-
-            lctx = (
-                LanguageContextBuilder()
-                    .set_target_language("c")
-                    .create()
-            )
-            base_path = gen_paths.out_dir
-            root_namespace_dir = base_path / Path("uavcan")
-            root_namespace_dir.mkdir(exist_ok=True)
-            nested_namespace_dir = root_namespace_dir / Path("node")
-            nested_namespace_dir.mkdir(exist_ok=True)
-
-        .. code-block:: python
-            ns = Namespace("uavcan", root_namespace_dir, base_path, lctx)
-            nested_ns = Namespace("uavcan.node", root_namespace_dir, base_path, lctx)
-
-            # Add a nested namespace
-            assert ns.add_nested_namespace(nested_ns)
-
-            # Add the same nested namespace again, should return False.
-            assert not ns.add_nested_namespace(nested_ns)
-
-        """
-        if nested in self._nested_namespaces:
-            return False
-        self._nested_namespaces.add(nested)
-        nested._parent = self  # pylint: disable=protected-access
-        return True
-
-    def add_data_type(self, dsdl_type: pydsdl.CompositeType, extension: Optional[str] = None) -> Path:
-        """
-        Add a datatype to this namespace.
-
-        :param pydsdl.CompositeType dsdl_type: The datatype to add.
-        :param str extension: The file extension to use for the generated file. If None, the
-                                extension will be determined by the target language.
-        :return: A path to the file this type will be generated in.
-        """
-
-        language = self._language_context.get_target_language()
-        if extension is None:
-            extension = language.get_config_value(
-                Language.WKCV_DEFINITION_FILE_EXTENSION
-            )
-        output_file = Path(self._base_output_path) / IncludeGenerator.make_path(
-            dsdl_type, language, extension
-        )
-        self._data_type_to_outputs[dsdl_type] = output_file
-        return output_file
-
-    # +-----------------------------------------------------------------------+
-    # | DUCK TYPING: pydsdl.CompositeType
-    # +-----------------------------------------------------------------------+
+    # +--[DUCK TYPING: pydsdl.CompositeType]-----------------------------------------------------------------------+
     @property
     def short_name(self) -> str:
         """
@@ -286,9 +578,7 @@ class Namespace(pydsdl.Any):
         """
         return []
 
-    # +-----------------------------------------------------------------------+
-    # | PYTHON DATA MODEL
-    # +-----------------------------------------------------------------------+
+    # +--[PYTHON DATA MODEL]--------------------------------------------------------------------------------------+
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Namespace):
@@ -302,9 +592,27 @@ class Namespace(pydsdl.Any):
     def __hash__(self) -> int:
         return hash(self._full_namespace)
 
-    # +-----------------------------------------------------------------------+
-    # | PRIVATE
-    # +-----------------------------------------------------------------------+
+    # +--[PRIVATE]------------------------------------------------------------------------------------------------+
+
+    def _add_data_type(
+        self, dsdl_type: pydsdl.CompositeType, input_types: list[pydsdl.CompositeType], extension: Optional[str]
+    ) -> Generatable:
+        """
+        Add a datatype to this namespace.
+
+        :param pydsdl.CompositeType dsdl_type: The datatype to add.
+        :param str extension: The file extension to use for the generated file. If None, the
+                                extension will be determined by the target language.
+        :return: A path to the file this type will be generated in.
+        """
+
+        language = self._language_context.get_target_language()
+        if extension is None:
+            extension = language.get_config_value(Language.WKCV_DEFINITION_FILE_EXTENSION)
+        output_file = Path(self._base_output_path) / IncludeGenerator.make_path(dsdl_type, language, extension)
+        output_generatable = Generatable.wrap(output_file, dsdl_type, input_types)
+        self._data_type_to_outputs[dsdl_type] = output_generatable
+        return output_generatable
 
     def _bfs_search_for_output_path(self, data_type: pydsdl.CompositeType, skip_namespace: set["Namespace"]) -> Path:
         search_queue: Deque[Namespace] = collections.deque()
@@ -316,7 +624,7 @@ class Namespace(pydsdl.Any):
                     return namespace._data_type_to_outputs[data_type]  # pylint: disable=protected-access
                 except KeyError:
                     pass
-            for nested_namespace in namespace._nested_namespaces:  # pylint: disable=protected-access
+            for nested_namespace in namespace._nested_namespaces.values():  # pylint: disable=protected-access
                 search_queue.appendleft(nested_namespace)
 
         raise KeyError(data_type)
@@ -354,116 +662,6 @@ class Namespace(pydsdl.Any):
 # +---------------------------------------------------------------------------+
 
 
-class NamespaceFactory:
-    """
-    Read-through cache and factory for :class:`Namespace` objects.
-
-    :param LanguageContext lctx: The language context to use when building
-            :class:`nunavut.Namespace` objects.
-    :param PurePath base_path: The base directory under which all generated files will be created.
-    :param Path root_namespace_dir: The path representing the dsdl namespace and containing the
-            namespaces's datatypes and nested namespaces.
-
-    .. invisible-code-block: python
-
-        from nunavut._namespace import Namespace, NamespaceFactory
-        from nunavut.lang import LanguageContext, LanguageContextBuilder
-        from pathlib import Path
-
-        lctx = (
-            LanguageContextBuilder()
-                .set_target_language("c")
-                .create()
-        )
-        base_path = gen_paths.out_dir
-        root_namespace_dir = gen_paths.out_dir / Path("uavcan")
-        root_namespace_dir.mkdir(exist_ok=True)
-        nsf = NamespaceFactory(lctx, base_path, root_namespace_dir)
-
-        assert nsf.get_root_namespace() is not None
-        uavcan_ns = nsf.get_or_make_namespace("uavcan")
-        assert uavcan_ns is not None
-        assert uavcan_ns.short_name == "uavcan"
-
-    """
-
-    def __init__(self, lctx: LanguageContext, base_path: PurePath, root_namespace_dir: Path):
-        self._lctx = lctx
-        self._base_path = base_path
-        self._namespaces: dict[str, Namespace] = dict()
-        self._root_namespace_dir = root_namespace_dir
-
-    def get_root_namespace(self) -> Namespace:
-        """
-        Namespace object for the root namespace.
-        """
-        try:
-            return next(iter(self._namespaces.values())).get_root_namespace()
-        except StopIteration:
-            pass
-        return self.get_empty_namespace()
-
-    def get_empty_namespace(self) -> Namespace:
-        """
-        Namespace object for the empty namespace.
-        """
-        return self.get_or_make_namespace("")
-
-    def add_types(self, types: Iterable[pydsdl.CompositeType]) -> Namespace:
-        """
-        Adds dsdl types to a namespace tree building new nodes as needed.
-
-        :param list types: A list of pydsdl types.
-        :return: The root :class:`nunavut.Namespace` as returned from :meth:`NamespaceFactory.get_root_namespace`
-            but after new nodes have been added.
-        """
-        for dsdl_type in types:
-            # For each type we form a path with the output_dir as the base; the intermediate
-            # folders named for the type's namespaces; and a file name that includes the type's
-            # short name, major version, minor version, and the extension argument as a suffix.
-            # Python's pathlib adapts the provided folder and file names to the platform
-            # this script is running on.
-            # We also, lazily, generate Namespace nodes as we encounter new namespaces for the
-            # first time.
-
-            namespace = self.get_or_make_namespace(dsdl_type.full_namespace)
-            namespace.add_data_type(dsdl_type)
-
-        return self.get_root_namespace()
-
-    def get_or_make_namespace(self, full_namespace: str) -> Namespace:
-        """
-        Read-through cache and factory for :class:`Namespace` objects.
-
-        :param str full_namespace: The full, dot-separated name of the namepace.
-        :return: The :class:`Namespace` object.
-
-        """
-        try:
-            return self._namespaces[full_namespace]
-        except KeyError:
-            pass
-
-        namespace = ancestor = Namespace(full_namespace, self._root_namespace_dir, self._base_path, self._lctx)
-
-        self._namespaces[full_namespace] = namespace
-
-        while len(ancestor.namespace_components) > 1:
-            parent_ns = ".".join(ancestor.namespace_components[:-1])
-            try:
-                self._namespaces[parent_ns].add_nested_namespace(ancestor)
-                break
-            except KeyError:
-                pass
-
-            parent = Namespace(parent_ns, self._root_namespace_dir, self._base_path, self._lctx)
-            parent.add_nested_namespace(ancestor)
-            self._namespaces[parent_ns] = parent
-            ancestor = parent
-
-        return namespace
-
-
 def build_namespace_tree(
     types: list[pydsdl.CompositeType],
     root_namespace_dir: Union[str, Path],
@@ -475,8 +673,9 @@ def build_namespace_tree(
 
     .. note::
 
-        Deprecated. Use the :method:`NamespaceFactory.add_types` method of a :class:`NamespaceFactory`
-        object instead. This method creates and destroys a :class:`NamespaceFactory` internally which is inefficient.
+        Deprecated. Use :method:`Namespace.add_types` instead. build_namespace_tree creates a new a :class:`Namespace`
+        index internally which may lead to unexpected behavior if calling this method multiple times. Furthermore, it
+        cannot associate output files with their dependent types and is ambiguous about the root namespace directory.
 
     Given a list of pydsdl types, this method returns a root :class:`nunavut.Namespace`.
     The root :class:`nunavut.Namespace` is the top of a tree where each node contains
@@ -484,7 +683,14 @@ def build_namespace_tree(
     instances contained within the namespace.
 
     :param list types: A list of pydsdl types.
-    :param str | Path root_namespace_dir: A path to the folder which is the root namespace.
+    :param str | Path root_namespace_dir: The root namespace directory. This is the directory that contains the
+            namespaces's datatypes and nested namespaces.
+
+        .. note::
+            Root namespace directories are determined by the source file path of individual types so it is possible
+            to pass in a list of types that are not available in the returned Namespace. Only types that are within
+            this root namespace directory will be included in the returned Namespace.
+
     :param str | Path output_dir: The base directory under which all generated files will be created.
     :param nunavut.LanguageContext language_context: The language context to use when building
             :class:`nunavut.Namespace` objects.
@@ -493,23 +699,9 @@ def build_namespace_tree(
 
     """
 
-    nsf = NamespaceFactory(language_context, PurePath(output_dir), Path(root_namespace_dir))
-
-    for dsdl_type in types:
-        # For each type we form a path with the output_dir as the base; the intermediate
-        # folders named for the type's namespaces; and a file name that includes the type's
-        # short name, major version, minor version, and the extension argument as a suffix.
-        # Python's pathlib adapts the provided folder and file names to the platform
-        # this script is running on.
-        # We also, lazily, generate Namespace nodes as we encounter new namespaces for the
-        # first time.
-
-        namespace = nsf.get_or_make_namespace(dsdl_type.full_namespace)
-        namespace.add_data_type(  # pylint: disable=protected-access
-            dsdl_type, language_context.get_target_language().get_config_value(Language.WKCV_DEFINITION_FILE_EXTENSION)
-        )
-
-    return nsf.get_root_namespace()
+    index = Namespace.Identity(Path(output_dir), language_context)
+    Namespace.add_types(index, [(dsdl_type, []) for dsdl_type in types])
+    return index.get_root_namespace(Path(root_namespace_dir))
 
 
 # +---------------------------------------------------------------------------+

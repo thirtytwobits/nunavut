@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from pydsdl import Any, CompositeType, read_namespace
 
-from nunavut import Namespace, NamespaceFactory
+from nunavut import Namespace, NamespaceContext
 from nunavut._namespace import build_namespace_tree
 from nunavut._utilities import YesNoDefault
 from nunavut.jinja import DSDLCodeGenerator
@@ -70,7 +70,7 @@ def gen_test_namespace(
     includes = [str(gen_paths.dsdl_dir / Path("uavcan"))]
     compound_types = read_namespace(root_namespace_path, includes, allow_unregulated_fixed_port_id=True)
     return (
-        NamespaceFactory(language_context, gen_paths.out_dir, Path(root_namespace_path)).add_types(compound_types),
+        NamespaceContext(language_context, gen_paths.out_dir, Path(root_namespace_path)).add_types(compound_types),
         root_namespace_path,
         compound_types,
     )

@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 
 from pydsdl import read_namespace
-from nunavut import Namespace, NamespaceFactory
+from nunavut import Namespace, NamespaceContext
 from nunavut.lang import LanguageContextBuilder
 from nunavut.jinja import DSDLCodeGenerator
 from nunavut._utilities import TEMPLATE_SUFFIX
@@ -55,7 +55,7 @@ def test_one_template(gen_paths):  # type: ignore
     root_namespace = str(root_namespace_dir)
     serializable_types = read_namespace(root_namespace, [])
     language_context = LanguageContextBuilder(include_experimental_languages=True).set_target_language("js").create()
-    namespace = NamespaceFactory(language_context, gen_paths.out_dir, root_namespace_dir).add_types(serializable_types)
+    namespace = NamespaceContext(language_context, gen_paths.out_dir, root_namespace_dir).add_types(serializable_types)
     generator = DSDLCodeGenerator(namespace, templates_dir=gen_paths.templates_dir)
     generator.generate_all(False)
 
@@ -77,7 +77,7 @@ def test_get_templates(gen_paths):  # type: ignore
     root_namespace = str(root_namespace_dir)
     serializable_types = read_namespace(root_namespace, [])
     language_context = LanguageContextBuilder(include_experimental_languages=True).set_target_language("c").create()
-    namespace = NamespaceFactory(language_context, gen_paths.out_dir, root_namespace_dir).add_types(serializable_types)
+    namespace = NamespaceContext(language_context, gen_paths.out_dir, root_namespace_dir).add_types(serializable_types)
     generator = DSDLCodeGenerator(namespace, templates_dir=gen_paths.templates_dir)
 
     templates = generator.get_templates()

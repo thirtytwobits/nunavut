@@ -199,7 +199,6 @@ class CodeGenerator(AbstractGenerator):
             .set_trim_blocks(trim_blocks)
             .set_lstrip_blocks(lstrip_blocks)
         )
-        env_builder.add_globals(resource_types=resource_types)
         if additional_filters is not None:
             env_builder.add_filters(**additional_filters)
         if additional_tests is not None:
@@ -423,20 +422,6 @@ class DSDLCodeGenerator(CodeGenerator):
         result = self.dsdl_loader.type_to_template(type(value))
         if result is None:
             raise RuntimeError(f"No template found for type {value}")
-        return result.name
-
-    def filter_allfile_to_template(self, allfile: Union[str, Path]) -> str:
-        """
-        Template for allfile resolution as a filter. Available as ``allfile_to_template``
-        in all template environments.
-
-        :param allfile: The name and/or relative path for the allfile's output.
-
-        :return: A path to a template for rendering the allfile :data:`TEMPLATE_SUFFIX`
-        """
-        result = self.dsdl_loader.allfile_to_template(allfile if isinstance(allfile, Path) else Path(allfile))
-        if result is None:
-            raise RuntimeError(f"No template found for allfile {allfile}")
         return result.name
 
     def filter_type_to_include_path(self, value: Any, resolve: bool = False) -> str:
@@ -803,11 +788,7 @@ class DSDLCodeGenerator(CodeGenerator):
             logger.info("Generating: %s", parsed_type)
             generated.append(self._generate_type(parsed_type, output_path, is_dryrun, allow_overwrite))
 
-        generated.extend(
-            self._generate_allfiles(
-                provider, self.namespace.get_root_namespace().output_folder.parent, is_dryrun, allow_overwrite
-            )
-        )
+        generated.extend(self._generate_index_files(is_dryrun, allow_overwrite))
         return generated
 
     # +-----------------------------------------------------------------------+
@@ -886,30 +867,29 @@ class DSDLCodeGenerator(CodeGenerator):
             self._generate_code(output_path, template_gen, allow_overwrite)
         return output_path
 
-    def _generate_allfiles(
+    def _generate_index_files(
         self,
-        provider: Generator[Tuple[Any, Path], None, None],
-        output_path: Path,
         is_dryrun: bool,
         allow_overwrite: bool,
     ) -> list[Path]:
         """
-        Renders allfile files which are each given access to the provider as `AllT`.
+        Renders index files which are each given access to all namespaces as `N`.
         """
         output_paths = []
+        index_file_path = self.namespace.output_folder
         target_extension = self.language_context.get_target_language().get_config_value(
             nunavut.lang.Language.WKCV_DEFINITION_FILE_EXTENSION
         )
-        for allfile in self.allfiles:
-            template_name = self.filter_allfile_to_template(allfile)
+        for index_file in self.index_files:
+            template_name = self.dsdl_loader.index_file_to_template(index_file)
             template = self._env.get_template(template_name)
-            template_gen = template.generate(AllT=provider)
-            allfile_output = output_path / allfile
-            if len(allfile.suffix) == 0:
-                allfile_output = allfile_output.with_suffix(target_extension)
-            output_paths.append(allfile_output)
+            template_gen = template.generate(N=self.namespace)
+            index_file_output = index_file_path / index_file
+            if len(index_file.suffix) == 0:
+                index_file_output = index_file_output.with_suffix(target_extension)
+            output_paths.append(index_file_output)
             if not is_dryrun:
-                self._generate_code(allfile_output, template_gen, allow_overwrite)
+                self._generate_code(index_file_output, template_gen, allow_overwrite)
         return output_paths
 
 
@@ -962,7 +942,7 @@ class SupportGenerator(CodeGenerator):
         allow_overwrite: bool = True,
     ) -> Iterable[Path]:
         target_language = self.language_context.get_target_language()
-        target_path = Path(self.namespace.get_support_output_folder()) / self._sub_folders
+        target_path = Path(self.namespace.get_index_namespace().base_output_path) / self._sub_folders
 
         line_pps: list[LinePostProcessor] = []
         file_pps: list[FilePostProcessor] = []

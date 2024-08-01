@@ -104,6 +104,20 @@ The T global contains the type for the given template. For example::
         {{ attr.data_type }}
     {%- endfor %}
 
+N
+=================================================
+In `index files`_ ``N`` is provided instead of ``T``. ``N`` is a generator that yields each namespace in the for the
+current environment where each namespace is an iterable that returns each type in the namespace. For example::
+
+    {%- for namespace in N %}
+         {%- for T in namespace %}
+            {{ T.full_name }}
+            {%- for attr in T.attributes %}
+               {{ attr.data_type }}
+            {%- endfor %}
+         {%- endfor %}
+    {%- endfor %}
+
 now_utc
 =================================================
 
@@ -505,7 +519,7 @@ If the :code:`generate_namespace_types` parameter of :class:`~nunavut.jinja.Gene
 nested namespaces regardless of language. :code:`NO` suppresses this behavior and :code:`DEFAULT`
 will choose the behavior based on the target language. For example::
 
-    root_namespace = NamespaceFactory(language_context, out_dir, root_ns_folder).add_types(compound_types)
+    root_namespace = NamespaceContext(language_context, out_dir, root_ns_folder).add_types(compound_types)
 
     generator = Generator(root_namespace, YesNoDefault.DEFAULT)
 

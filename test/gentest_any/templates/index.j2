@@ -1,4 +1,5 @@
-{% for T, out_file in AllT() %}
+{{ self }}
+{% for T, out_file in N.get_all_datatypes() %}
 
 {
   "full_name": "{{ T.full_name }}",
